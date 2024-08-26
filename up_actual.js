@@ -73,7 +73,7 @@ async function main() {
   let startDate
   if (lastSync) {
     // Looking back an additional 5 days, this may not be necessary, just trying to make sure we catch any additional 'older' transactions that may have slipped in after our last check.
-    startDate = new Date(lastSync)
+    startDate = new Date()
     startDate.setDate(startDate.getDate() - 5)
   }
 
@@ -81,8 +81,8 @@ async function main() {
   fsExtra.emptyDirSync(budgetspath);
 
   await sync.run(token, budgetId, budgetEncryption, linkedAccounts, startDate, serverUrl, serverPassword, sendNotes)
-  nconf.set('lastSync', new Date().toDateString())
-  nconf.save()
+  //nconf.set('lastSync', new Date().toDateString())
+  //nconf.save()
 
   console.log('Clearing temporary budget files.')
   fsExtra.emptyDirSync(budgetspath);
