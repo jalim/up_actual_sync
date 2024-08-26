@@ -69,13 +69,8 @@ async function main() {
   if(actualInstance) {
     await actualInstance.shutdown()
   }
-  const lastSync = nconf.get('lastSync')
-  let startDate
-  if (lastSync) {
-    // Looking back an additional 5 days, this may not be necessary, just trying to make sure we catch any additional 'older' transactions that may have slipped in after our last check.
-    startDate = new Date()
-    startDate.setDate(startDate.getDate() - 5)
-  }
+  startDate = new Date()
+  startDate.setDate(startDate.getDate() - 5)
 
   budgetspath = __dirname+'/budgets'
   fsExtra.emptyDirSync(budgetspath);
