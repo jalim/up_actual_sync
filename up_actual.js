@@ -89,7 +89,7 @@ async function main() {
   // process.exit()
 }
 
-// main();
+main();
 
 if(USE_NODE_CRON) {
   console.log("Starting cron");
