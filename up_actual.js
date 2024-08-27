@@ -6,7 +6,7 @@ const configFile = process.env.configFile || './config.json';
 const USE_NODE_CRON = process.env.USE_NODE_CRON;
 
 fsExtra.ensureFile(configFile, err => {
-  console.log(err) // => null
+  console.log("Error from ensureFile: ",err) // => null
 });
 
 nconf.argv().env().file({ file: configFile })
