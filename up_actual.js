@@ -5,6 +5,10 @@ const configure = require('./configure');
 const configFile = process.env.configFile || './config.json';
 const USE_NODE_CRON = process.env.USE_NODE_CRON;
 
+fsExtra.ensureFile(configFile, err => {
+  console.log(err) // => null
+});
+
 nconf.argv().env().file({ file: configFile })
 
 let actualInstance
@@ -87,15 +91,15 @@ async function main() {
   // process.exit()
 }
 
-main();
+// main();
 
 if(USE_NODE_CRON) {
   console.log("Starting cron");
   var cron = require('node-cron');
 
-  const CRON_ONCE_PER_HOUR = '* * * * *';
+  const CRON_ONCE_PER_HOUR = '0 * * * *';
   // shedule fetch data for later
   cron.schedule(CRON_ONCE_PER_HOUR, async () => {
-    console.log("Boop");
+    await main();
   });
 }
