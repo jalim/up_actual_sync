@@ -7,7 +7,6 @@ const USE_NODE_CRON = process.env.USE_NODE_CRON;
 
 nconf.argv().env().file({ file: configFile })
 
-
 let actualInstance
 
 async function main() {
@@ -85,7 +84,7 @@ async function main() {
   fsExtra.emptyDirSync(budgetspath);
 
   console.log('Complete')
-  process.exit()
+  // process.exit()
 }
 
 main();
