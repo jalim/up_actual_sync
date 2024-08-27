@@ -5,9 +5,7 @@ const configure = require('./configure');
 const configFile = process.env.configFile || './config.json';
 const USE_NODE_CRON = process.env.USE_NODE_CRON;
 
-fsExtra.ensureFile(configFile, err => {
-  console.log("Error from ensureFile: ",err) // => null
-});
+console.log("Config File Location: ", configFile)
 
 nconf.argv().env().file({ file: configFile })
 
