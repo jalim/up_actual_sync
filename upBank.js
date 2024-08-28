@@ -51,7 +51,7 @@ async function validate(API_TOKEN) {
     return true;
   } catch (error) {
     console.error('Token Invalid Try Again');
-    throw error;
+    return false;
   }
 }
 

@@ -20,10 +20,14 @@ async function main() {
   let sendNotes = nconf.get('actual:sendNotes') || ''
   let serverValidated = nconf.get('actual:serverValidated') || ''
   let linkedAccounts = nconf.get('linkedAccounts') || []
+  let webUI = nconf.get('webUI')
 
   const setupRequired = !!nconf.get('setup')  || !token || !budgetId || !serverUrl || !serverPassword || !serverValidated
   const linkRequired = setupRequired || !!nconf.get('link') || !linkedAccounts
   
+  if (webUI) {
+    const webUIService = require('./index')
+  }
 
   if (setupRequired) {
 
