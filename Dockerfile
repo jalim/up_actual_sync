@@ -12,6 +12,7 @@ COPY package*.json ./
 RUN npm install
 
 COPY --chown=node:node *.js .
+COPY --chown=node:node views ./views
 
 
 CMD [ "node", "up_actual.js" ]
