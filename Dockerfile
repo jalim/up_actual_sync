@@ -13,6 +13,6 @@ RUN npm install
 
 COPY --chown=node:node *.js .
 COPY --chown=node:node views ./views
-
+COPY --chown=node:node public ./public
 
 CMD [ "node", "index.js" ]
