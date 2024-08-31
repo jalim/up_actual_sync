@@ -15,4 +15,4 @@ COPY --chown=node:node *.js .
 COPY --chown=node:node views ./views
 
 
-CMD [ "node", "up_actual.js" ]
+CMD [ "node", "index.js" ]
