@@ -40,10 +40,6 @@ async function sync () {
   console.log('Getting all accounts and transactions from ActualBudget')
   const allAccounts = await api.getAccounts()
   console.log('Getting all transactions from UP')
-
-  console.log('_____________________________________________________')
-  console.log('|          Account          |   Added   |  Updated  |')
-  console.log('+---------------------------+-----------+-----------+')
   for (const upAccountId in _linkedAccounts) {
     const accountId = _linkedAccounts[upAccountId]
     const allTrans = await upBank.getTransactions(_token, _startDate, upAccountId)
@@ -64,20 +60,6 @@ async function sync () {
       const importedTransactions = await api.importTransactions(accountId, transactions)
       const accountName = allAccounts.find(f => f.id === accountId).name
       console.log(`| ${accountName.padEnd(25, ' ')} | ${importedTransactions.added.length.toString().padStart(9, ' ')} | ${importedTransactions.updated.length.toString().padStart(9, ' ')} |`)
-      
-      if( _sendNotes == 'yes' ) {
-      
-        const balanceDate = new Date(allTrans.accounts.find(f => f.id == simpleFINAccountId)['balance-date'] * 1000);
-        const formatter = new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: 'USD',
-        });
-
-        const balance = allTrans.accounts.find(f => f.id == simpleFINAccountId).balance
-        const accountNote = "Transactions synced at " + balanceDate.toLocaleString() + " with balance " + formatter.format(balance);
-        const noteId = 'account-' + accountId;
-        await actualInjected.send('notes-save', { id: noteId, note: accountNote });
-      }
     } catch (ex) {
       console.log(ex)
       throw ex
@@ -95,22 +77,22 @@ async function sync () {
   
 }
 
-async function run (token, budgetId, budgetEncryption, linkedAccounts, startDate, serverUrl, serverPassword, sendNotes) {
+async function run (token, actual, linkedAccounts, startDate) {
   _token = token
   _linkedAccounts = linkedAccounts
   _startDate = startDate
-  _serverUrl = serverUrl
-  _serverPassword = serverPassword
-  _budgetId = budgetId
-  _budgetEncryption = budgetEncryption
-  _sendNotes = sendNotes
+  _serverUrl = actual.serverUrl
+  _serverPassword = actual.serverPassword
+  _budgetId = actual.budgetId
+  _budgetEncryption = actual.budgetEncryption
+  _sendNotes = actual.sendNotes
 
   if(!_serverUrl || !_serverPassword) {
     throw new Error('Server URL or password not set')
   } else {
     console.log('Server information set')
   }
-  console.log(`Budget ID: ${budgetId}`)
+  console.log(`Budget ID: ${_budgetId}`)
 
   await sync()
   

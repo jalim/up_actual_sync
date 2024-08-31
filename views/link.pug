@@ -1,0 +1,29 @@
+head
+  meta(charset='utf-8')
+  title Config
+  link(rel='stylesheet', href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css')
+
+  body
+    div.container
+        div
+            h1 Link Accounts
+            h4 Link Up accounts with Actual accounts and click save for each account.
+        hr
+        // Modal Body
+        each up in UPAccounts
+            div
+                form(role='form' method='POST' action='/link')
+                    div.mb-3
+                        label(for='region')=up.displayName
+                    div.mb-3
+                        input(type="hidden" name="account" value=up.id)
+                        select.form-control(name='accID' placeholder="region" id="accID")
+                            option(name="blank")
+                            each acc in actualAccounts
+                                if (linkedAccounts[up.id] == acc.id)
+                                    option(name="accID" value=acc.id selected)=acc.name
+                                else
+                                    option(name="accID" value=acc.id)=acc.name
+                    div.mb-3
+                        button.btn.btn-primary(type="submit" name="abc") Save
+            hr

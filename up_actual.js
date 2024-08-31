@@ -31,77 +31,49 @@ async function main() {
 
   if (setupRequired) {
 
-    const initialSetup = await configure.initialSetup(token, budgetId, budgetEncryption, serverUrl, serverPassword)
-    token = initialSetup.token
-    budgetId = initialSetup.budgetId
-    budgetEncryption = initialSetup.budgetEncryption
-    serverUrl = initialSetup.serverUrl
-    serverPassword = initialSetup.serverPassword
-    sendNotes = initialSetup.sendNotes
+    console.log('Setup required. Either provide a config.json file or set webUI=true and complete configuration')
+    // const initialSetup = await configure.initialSetup(token, budgetId, budgetEncryption, serverUrl, serverPassword)
+    // token = initialSetup.token
+    // budgetId = initialSetup.budgetId
+    // budgetEncryption = initialSetup.budgetEncryption
+    // serverUrl = initialSetup.serverUrl
+    // serverPassword = initialSetup.serverPassword
+    // sendNotes = initialSetup.sendNotes
 
-    nconf.set('UP:token', token)
-    nconf.set('actual:budgetId', budgetId)
-    nconf.set('actual:budgetEncryption', budgetEncryption)
-    nconf.set('actual:serverUrl', serverUrl)
-    nconf.set('actual:serverPassword', serverPassword)
-    nconf.set('actual:sendNotes', sendNotes)
+    // nconf.set('UP:token', token)
+    // nconf.set('actual:budgetId', budgetId)
+    // nconf.set('actual:budgetEncryption', budgetEncryption)
+    // nconf.set('actual:serverUrl', serverUrl)
+    // nconf.set('actual:serverPassword', serverPassword)
+    // nconf.set('actual:sendNotes', sendNotes)
 
-    await nconf.save()
+    // await nconf.save()
 
 
 
-    nconf.set('actual:serverValidated', 'yes');
+    // nconf.set('actual:serverValidated', 'yes');
   
-    await nconf.save()
+    // await nconf.save()
    
   }
   if (linkRequired) {
-    console.log('linkRequired')
-    actualConfig = {
-      budgetId: budgetId,
-      budgetEncryption: budgetEncryption,
-      serverUrl: serverUrl,
-      serverPassword: serverPassword
-    }
+    console.log('Account linking required. Either add these to the config.json file or set webUI=true and complete linking')
 
-    if (!actualInstance) {
-      actualInstance = await configure.initialize(actualConfig);
-    }
+    // actualConfig = {
+    //   budgetId: budgetId,
+    //   budgetEncryption: budgetEncryption,
+    //   serverUrl: serverUrl,
+    //   serverPassword: serverPassword
+    // }
 
-    linkedAccounts = await configure.accountSetup(token, actualInstance, linkedAccounts, linkRequired)
-    nconf.set('linkedAccounts', linkedAccounts)
-    nconf.save()
+    // if (!actualInstance) {
+    //   actualInstance = await configure.initialize(actualConfig);
+    // }
+
+    // linkedAccounts = await configure.accountSetup(token, actualInstance, linkedAccounts, linkRequired)
+    // nconf.set('linkedAccounts', linkedAccounts)
+    // nconf.save()
   }
 
-  if(actualInstance) {
-    await actualInstance.shutdown()
-  }
-  startDate = new Date()
-  startDate.setDate(startDate.getDate() - 5)
-
-  budgetspath = __dirname+'/budgets'
-  fsExtra.emptyDirSync(budgetspath);
-
-  await sync.run(token, budgetId, budgetEncryption, linkedAccounts, startDate, serverUrl, serverPassword, sendNotes)
-  //nconf.set('lastSync', new Date().toDateString())
-  //nconf.save()
-
-  console.log('Clearing temporary budget files.')
-  fsExtra.emptyDirSync(budgetspath);
-
-  console.log('Complete')
-  // process.exit()
-}
-
-main();
-
-if(USE_NODE_CRON) {
-  console.log("Starting cron");
-  var cron = require('node-cron');
-
-  const CRON_ONCE_PER_HOUR = '0 * * * *';
-  // shedule fetch data for later
-  cron.schedule(CRON_ONCE_PER_HOUR, async () => {
-    await main();
-  });
+  
 }
