@@ -12,6 +12,7 @@ yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
 
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
@@ -157,3 +158,4 @@ dist
 # End of https://www.toptal.com/developers/gitignore/api/node,visualstudiocode
 tmp/
 config.json
+budgets/
