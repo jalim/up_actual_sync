@@ -152,15 +152,20 @@ Off by default. Configure in the config file:
 ```
 
 - **`fromUp`** mirrors Up's categories. Up's parent categories become Actual category groups (Home, Personal, Good Life, Transport). Each category is created the first time it's used, and new on-budget transactions are categorised to match Up. Off-budget transactions are never categorised. A category you've already set in Actual is never overwritten.
-- **`transfers`** sets the category for the on-budget half of a transfer to or from the given off-budget account, e.g. money from your personal account into the family budget, or pocket money paid out to a child's saver. The categories are looked up by name and must already exist in Actual. Actual's rules don't run on transfers created through the API, so this setting is needed instead.
+- **`transfers`** (keyed by Actual account ID: open the account in Actual and copy the ID from the address bar, `…/accounts/<id>`) sets the category for the on-budget half of a transfer to or from the given off-budget account, e.g. money from your personal account into the family budget, or pocket money paid out to a child's saver. The categories are looked up by name and must already exist in Actual. Actual's rules don't run on transfers created through the API, so this setting is needed instead.
 
-## Upgrading from 1.x
+## Upgrading from 0.2.x
 
+- **A recent Actual server is required.** This release uses `@actual-app/api` 26.11, which needs a correspondingly current Actual server.
 - **Node 22+** is required (the Docker image now uses Node 24).
 - **The container runs as a non-root user.** Make sure your mounted config file or directory is writable by uid 1000.
-- **Budget encryption:** 1.x stored `"budgetEncryption": "true"` from a checkbox instead of the password, so encrypted budgets never worked. That value is now ignored. Enter the real encryption password on the setup page.
-- **`cronEnabled=false` and `webUI=false` now mean false.** In 1.x, any non-empty value turned these on.
+- **Budget encryption:** 0.2.x stored `"budgetEncryption": "true"` from a checkbox instead of the password, so encrypted budgets never worked. That value is now ignored. Enter the real encryption password on the setup page.
+- **`cronEnabled=false` and `webUI=false` now mean false.** In 0.2.x, any non-empty value turned these on.
+- **Round-ups are now imported.** A spending account with round-ups enabled is short in Actual by every round-up made before upgrading (see [Transfers and round-ups](#transfers-and-round-ups)).
+- **Existing transfer pairs stay as two ordinary transactions** until you use **Link existing transfers…** on the **Link accounts** page.
 - The interactive CLI setup (`up_actual.js`) has been removed. Use the web UI or write the config file.
+
+See [CHANGELOG.md](CHANGELOG.md) for everything that changed.
 
 ## Development
 
@@ -174,9 +179,17 @@ webUI=true npm start
 Code layout:
 
 - `index.js`: entrypoint (config, cron, web UI)
+- `src/config.js`: configuration loading and parsing
 - `src/upBank.js`: Up API client (paginated)
 - `src/actual.js`: opens/closes the Actual budget (serialized; the API is a singleton)
-- `src/sync.js`: maps Up transactions and imports them
+- `src/sync.js`: scheduled/manual sync from Up
+- `src/mapping.js`: Up transaction → Actual transaction mapping
+- `src/importer.js`: transfer and round-up pairing, imports, and linking existing transfer pairs
+- `src/categories.js`: Up category mirroring and transfer categories
+- `src/initialise.js`: creating Actual accounts from Up with opening balances
+- `src/repair.js`: the "Link existing transfers" action
 - `src/server.js`: Express routes
 - `src/ofx.js`: OFX parsing and stable P&N transaction identities
 - `src/ofxImport.js`: statement imports, opening balances and transfer matching
+
+Tests run against a real in-process Actual engine (`test/helpers/localBudget.js`), not mocks, wherever Actual's behaviour matters.
