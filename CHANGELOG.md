@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1
+
+### Fixed
+
+- **Crash after every budget operation.** Syncing or opening the Link accounts page deleted the local budget folder straight after `api.shutdown()`. `@actual-app/api` still writes `metadata.json` in the background after shutdown, and that write failed with ENOENT as an unhandled rejection, which exited the process. Containers crash-looped. Each budget session now uses its own folder, which is only cleaned up once it's stale (10 minutes).
+- Unhandled background errors are now logged instead of terminating the web server.
+
 ## 1.0.0
 
 A rewrite of the 0.2.x tool. See [Upgrading from 0.2.x](README.md#upgrading-from-02x) before deploying.
