@@ -64,6 +64,12 @@ if (settings.cronEnabled) {
   }, { noOverlap: true });
 }
 
+// Last line of defence for stray background failures (e.g. a late write
+// inside @actual-app/api): log them instead of taking the web server down.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled background error (continuing):', reason);
+});
+
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     console.log(`Received ${signal}, exiting.`);
