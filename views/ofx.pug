@@ -1,0 +1,21 @@
+extends layout
+
+block content
+  h1 Import P&N statements
+  p Upload one or more OFX exports. Review the accounts before importing into Actual. Start with the oldest history you want to keep, and include both sides of transfers when possible.
+  .alert.alert-info
+    | Loans usually belong off-budget. Check the closing balance: money owed should be negative. Transfers between on-budget and off-budget accounts need a category.
+  form#ofx-upload
+    label.form-label(for='ofx-files') OFX files (up to 10 files, 5 MB each; 8 MB total)
+    input#ofx-files.form-control(type='file' accept='.ofx,.qfx' multiple required)
+    button.btn.btn-primary.mt-3(type='submit') Preview files
+  #ofx-status.mt-3(role='status' aria-live='polite')
+  form#ofx-confirm.mt-4(hidden)
+    #ofx-accounts
+    p Matching uses shared P&N references. For Up transfers, choose any linked Up account or limit matching to one account. Only unique matches with a bank-identifying description are linked automatically; others remain for review. Existing linked transfers are reused. Future Up syncs also check for matches.
+    p Existing accounts keep their opening balance and budget status. New accounts get an opening balance calculated from the statement. Overlapping files are de-duplicated.
+    button#ofx-import.btn.btn-success(type='submit') Create accounts and import
+  #ofx-result.mt-4
+
+block scripts
+  script(src='/ofx.js')

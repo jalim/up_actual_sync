@@ -159,3 +159,4 @@ dist
 tmp/
 config.json
 budgets/
+.DS_Store

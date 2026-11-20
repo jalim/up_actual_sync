@@ -1,0 +1,28 @@
+extends layout
+
+block content
+  h1.h3 Link existing transfers
+  if done
+    .alert.alert-success
+      | Linked #{result.linked} transfer#{result.linked === 1 ? '' : 's'}.
+      if result.skipped
+        |  #{result.skipped} skipped.
+    a.btn.btn-primary(href='/link') Back to linking
+  else
+    p
+      | Transfers between your linked Up accounts that were imported as two ordinary transactions
+      | (by an older version, or before both accounts were linked) can be turned into Actual transfers.
+    ul
+      li Found #[strong= result.pairs] transfer pair#{result.pairs === 1 ? '' : 's'} in Up since each account's start date.
+      li #[strong= result.alreadyLinked] already linked as transfers.
+      li #[strong= result.linked] can be linked now.
+      if result.skipped
+        li #{result.skipped} can't be linked automatically (a half is missing, split, or already part of another transfer).
+    if result.linked
+      p.text-body-secondary
+        | Each pair keeps its Up transaction IDs, so future syncs won't re-import anything. The incoming half is replaced by
+        | Actual's transfer counterpart; its notes and cleared status are kept, and any category on it is replaced by the transfer.
+      form(method='POST' action='/transfers/link')
+        input(type='hidden' name='confirm' value='1')
+        button.btn.btn-primary(type='submit') Link #{result.linked} transfer#{result.linked === 1 ? '' : 's'}
+    a.btn.btn-link(href='/link') Cancel
