@@ -158,4 +158,5 @@ dist
 # End of https://www.toptal.com/developers/gitignore/api/node,visualstudiocode
 tmp/
 config.json
-budgets/.DS_Store
+budgets/
+.DS_Store

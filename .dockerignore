@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+budgets
+config
+config.json
+test
+*.md
+.DS_Store
