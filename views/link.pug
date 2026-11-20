@@ -28,7 +28,7 @@ block content
           .form-text.mt-2 Home loan accounts are created off-budget.
 
   h2.h5 Existing links
-  p Choose which Actual account each Up account syncs into.
+  p Choose which Actual account each Up account syncs into, or pick #[em ➕ Create new Actual account] to create one with its history from the 1st of this month (or since the Up account was opened, if later).
   each up in upAccounts
     form.row.g-2.align-items-center.mb-3(method='POST' action='/link')
       input(type='hidden' name='account' value=up.id)
@@ -38,6 +38,7 @@ block content
       .col-sm-6
         select.form-select(name='accID' id='acc-' + up.id)
           option(value='') Not linked
+          option(value=createNew) ➕ Create new Actual account
           each acc in actualAccounts
             option(value=acc.id selected=linkedAccounts[up.id] === acc.id)= acc.name
       .col-sm-2

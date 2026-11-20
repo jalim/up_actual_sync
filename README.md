@@ -5,6 +5,7 @@ A small service that imports transactions from [Up Bank](https://up.com.au) into
 - Scheduled sync (hourly by default)
 - Web UI to configure credentials, link Up accounts to Actual accounts, and trigger a sync manually
 - Re-running is safe: transactions are de-duplicated by Up transaction ID, and held transactions are updated once they settle
+- Transfers between your Up accounts (including 2Up) and round-ups become proper Actual transfers
 
 ## Requirements
 
@@ -87,6 +88,8 @@ The tool can't create the budget file itself: API keys belong to one budget, so 
 2. Enter the key and the budget's sync ID on **Setup**.
 3. On **Link accounts**, under *Create Actual accounts from Up*, tick the Up accounts you want, choose an **Import history from** date (defaults to the 1st of this month), and select **Create and link**.
 
+When you open a new account in Up later, pick **➕ Create new Actual account** next to it on **Link accounts** and press **Save**. History starts from the 1st of this month, or from the day the Up account was opened if that's later. A brand-new account therefore starts at $0 with all its transactions.
+
 For each selected account the tool:
 
 - creates an Actual account with the same name (2Up accounts get a "(2Up)" suffix, and duplicate names get a number); home loans are created off-budget
@@ -98,7 +101,18 @@ The start date is saved per account (`importFrom` in the config file), so the re
 
 If an imported transaction has the same amount as the opening balance within 7 days of the start date, the opening balance is dated 8 days before the start date. Otherwise Actual's duplicate detection would merge the two.
 
-Transfers between your own Up accounts (e.g. moving money to a Saver) are imported as ordinary transactions in each account, not as Actual transfers.
+## Transfers and round-ups
+
+Up records a transfer in both accounts, and each side names the other. When both accounts are linked, the tool pairs the two sides (same amount, opposite direction, within a minute of each other) and creates **one** Actual transfer. Each half keeps its Up transaction ID, so re-running never duplicates it.
+
+Round-ups need special handling. Up records the round-up only as an extra amount on the purchase in your spending account, plus a separate *Round Up* credit in the saver. The tool adds the missing spending-side *Round Up* transaction so Actual's balance matches Up. If the round-up saver is linked, that transaction becomes a transfer to it.
+
+- Transfers to accounts that aren't linked (or aren't yours, e.g. PayID) are imported as ordinary transactions.
+- Each sync holds back for up to 10 minutes a transfer whose other half hasn't appeared in Up yet, so the two can be paired.
+- Pairs where one side was already imported as an ordinary transaction (e.g. by an older version) stay as ordinary transactions, so nothing is double-counted.
+- When an account is created with history, transfers to accounts that were linked earlier are imported as ordinary transactions for that history.
+
+**Upgrading an existing budget:** older versions didn't import round-ups, so a spending account with round-ups enabled is short in Actual by every round-up made before this version. Correct it with a one-off balance adjustment in Actual (reconcile the account to the Up balance), or recreate the account using the tool.
 
 ## Upgrading from 1.x
 

@@ -3,20 +3,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const sync = require('../src/sync');
+const { useLocalBudget, txnsIn } = require('./helpers/localBudget');
+const { upTxn, upTransfer } = require('./helpers/up');
 
-const upTxn = (id, overrides = {}) => ({
-  id,
-  attributes: {
-    createdAt: '2026-11-19T23:30:00+11:00',
-    amount: { valueInBaseUnits: -1234 },
-    description: 'Coffee Shop',
-    status: 'SETTLED',
-    ...overrides,
-  },
-});
+const budget = useLocalBudget(test);
 
 test('mapTransaction maps Up fields to an Actual import transaction', () => {
-  assert.deepEqual(sync.mapTransaction(upTxn('t1'), 'actual-1'), {
+  const t = upTxn({ id: 't1', amount: -1234, description: 'Coffee Shop', at: '2026-11-19T23:30:00+11:00' });
+  assert.deepEqual(sync.mapTransaction(t, 'actual-1'), {
     account: 'actual-1',
     date: '2026-11-19',
     amount: -1234,
@@ -30,12 +24,12 @@ test('mapTransaction maps Up fields to an Actual import transaction', () => {
 
 test('mapTransaction keeps the local date for late-night transactions', () => {
   // 00:30 local on the 20th is 13:30Z on the 19th; Actual should see the 20th.
-  const t = sync.mapTransaction(upTxn('t2', { createdAt: '2026-11-20T00:30:00+11:00' }), 'a');
+  const t = sync.mapTransaction(upTxn({ amount: 1, at: '2026-11-20T00:30:00+11:00' }), 'a');
   assert.equal(t.date, '2026-11-20');
 });
 
 test('held transactions are imported uncleared', () => {
-  assert.equal(sync.mapTransaction(upTxn('t3', { status: 'HELD' }), 'a').cleared, false);
+  assert.equal(sync.mapTransaction(upTxn({ amount: 1, status: 'HELD' }), 'a').cleared, false);
 });
 
 test('sinceDate subtracts days', () => {
@@ -43,67 +37,51 @@ test('sinceDate subtracts days', () => {
   assert.equal(d.toISOString(), '2026-11-15T12:00:00.000Z');
 });
 
-function fakeBudget(accounts, importResult = { added: ['x'], updated: [], errors: [] }) {
-  const calls = { imports: [], synced: false };
-  const api = {
-    getAccounts: async () => accounts,
-    importTransactions: async (id, txns) => {
-      calls.imports.push({ id, txns });
-      return importResult;
-    },
-    sync: async () => {
-      calls.synced = true;
-    },
-  };
-  return { calls, openBudget: (actual, dir, fn) => fn(api) };
+const fakeUp = (byAccount) => ({ getTransactions: async (token, id) => byAccount[id] || [] });
+const NOW = Date.parse('2026-11-20T12:00:00+11:00');
+
+function args(overrides) {
+  return { token: 'tok', actual: {}, syncDays: 5, openBudget: budget.openBudget, now: NOW, ...overrides };
 }
 
-test('run imports each linked account and syncs', async () => {
-  const { calls, openBudget } = fakeBudget([{ id: 'act-1', name: 'Spending' }]);
-  const upClient = { getTransactions: async () => [upTxn('t1'), upTxn('t2')] };
-  const results = await sync.run({
-    token: 'tok',
-    actual: {},
-    linkedAccounts: { 'up-1': 'act-1', 'up-2': '' },
-    dataDir: '/unused',
-    syncDays: 5,
-    upClient,
-    openBudget,
-  });
-  assert.equal(calls.imports.length, 1);
-  assert.equal(calls.imports[0].id, 'act-1');
-  assert.equal(calls.imports[0].txns.length, 2);
-  assert.ok(calls.synced);
-  assert.deepEqual(results, [
-    { upAccountId: 'up-1', actualAccountId: 'act-1', name: 'Spending', added: 1, updated: 0, errors: [] },
-  ]);
+test('run imports each linked account, links transfers, and reports per account', async () => {
+  const spend = await budget.api.createAccount({ name: 'Spending' }, 0);
+  const saver = await budget.api.createAccount({ name: 'Saver' }, 0);
+  const [out, inc] = upTransfer('up-1', 'up-2', 1000);
+  const results = await sync.run(
+    args({
+      linkedAccounts: { 'up-1': spend, 'up-2': saver, 'up-3': '' },
+      upClient: fakeUp({ 'up-1': [upTxn({ amount: -250 }), out], 'up-2': [inc] }),
+    }),
+  );
+  assert.deepEqual(
+    results.map((r) => [r.name, r.added, r.transfers, r.errors.length]),
+    [
+      ['Spending', 2, 1, 0],
+      ['Saver', 1, 1, 0],
+    ],
+  );
+  assert.equal(await budget.api.getAccountBalance(spend), -1250);
+  assert.equal(await budget.api.getAccountBalance(saver), 1000);
 });
 
 test('run skips links to Actual accounts that no longer exist', async () => {
-  const { calls, openBudget } = fakeBudget([]);
-  const results = await sync.run({
-    token: 'tok',
-    actual: {},
-    linkedAccounts: { 'up-1': 'gone' },
-    syncDays: 5,
-    upClient: { getTransactions: async () => [] },
-    openBudget,
-  });
-  assert.equal(calls.imports.length, 0);
+  const results = await sync.run(
+    args({ linkedAccounts: { 'up-1': 'gone' }, upClient: fakeUp({ 'up-1': [upTxn({ amount: -1 })] }) }),
+  );
   assert.deepEqual(results[0].errors, ['Actual account not found']);
 });
 
 test('run does not open the budget if Up fails', async () => {
   let opened = false;
   await assert.rejects(
-    sync.run({
-      token: 'tok',
-      actual: {},
-      linkedAccounts: { 'up-1': 'act-1' },
-      syncDays: 5,
-      upClient: { getTransactions: async () => { throw new Error('up down'); } },
-      openBudget: async () => { opened = true; },
-    }),
+    sync.run(
+      args({
+        linkedAccounts: { 'up-1': 'act-1' },
+        upClient: { getTransactions: async () => { throw new Error('up down'); } },
+        openBudget: async () => { opened = true; },
+      }),
+    ),
     /up down/,
   );
   assert.equal(opened, false);
@@ -113,17 +91,14 @@ test('run does not open the budget if Up fails', async () => {
 test('run rejects concurrent syncs', async () => {
   let release;
   const gate = new Promise((r) => (release = r));
-  const args = {
-    token: 'tok',
-    actual: {},
+  const a = args({
     linkedAccounts: { 'up-1': 'act-1' },
-    syncDays: 5,
     upClient: { getTransactions: async () => { await gate; return []; } },
-    openBudget: fakeBudget([{ id: 'act-1', name: 'A' }]).openBudget,
-  };
-  const first = sync.run(args);
+    openBudget: async () => [],
+  });
+  const first = sync.run(a);
   assert.equal(sync.isRunning(), true);
-  await assert.rejects(sync.run(args), sync.SyncInProgressError);
+  await assert.rejects(sync.run(a), sync.SyncInProgressError);
   release();
   await first;
   assert.equal(sync.isRunning(), false);
@@ -133,21 +108,19 @@ test('run requires a token', async () => {
   await assert.rejects(sync.run({ token: '', linkedAccounts: { a: 'b' } }), /token/);
 });
 
-test('run never imports transactions before an account\'s importFrom date', async () => {
-  const { calls, openBudget } = fakeBudget([{ id: 'act-1', name: 'A' }]);
-  await sync.run({
-    token: 'tok',
-    actual: {},
-    linkedAccounts: { 'up-1': 'act-1' },
-    importFrom: { 'up-1': '2026-11-19' },
-    syncDays: 5,
-    upClient: {
-      getTransactions: async () => [
-        upTxn('old', { createdAt: '2026-11-18T09:00:00+11:00' }),
-        upTxn('new', { createdAt: '2026-11-19T09:00:00+11:00' }),
-      ],
-    },
-    openBudget,
-  });
-  assert.deepEqual(calls.imports[0].txns.map((t) => t.imported_id), ['new']);
+test("run never imports transactions before an account's importFrom date", async () => {
+  const acct = await budget.api.createAccount({ name: 'From' }, 0);
+  await sync.run(
+    args({
+      linkedAccounts: { 'up-1': acct },
+      importFrom: { 'up-1': '2026-11-19' },
+      upClient: fakeUp({
+        'up-1': [
+          upTxn({ id: 'old', amount: -1, at: '2026-11-18T09:00:00+11:00' }),
+          upTxn({ id: 'new', amount: -2, at: '2026-11-19T09:00:00+11:00' }),
+        ],
+      }),
+    }),
+  );
+  assert.deepEqual((await txnsIn(budget.api, acct)).map((t) => t.imported_id), ['new']);
 });

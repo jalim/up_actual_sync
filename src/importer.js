@@ -1,0 +1,205 @@
+'use strict';
+
+/**
+ * Turns Up transactions into Actual transactions, recognising transfers
+ * between linked Up accounts and round-ups.
+ *
+ * Up reports a transfer once in each account, each side naming the other
+ * via relationships.transferAccount. Round-ups are different: the purchase
+ * in the spending account only carries an `attributes.roundUp` amount, and
+ * the saver gets a separate "Round Up" credit naming the spending account.
+ * We synthesise the spending-side round-up so balances match Up, then pair
+ * it with the saver credit like any other transfer.
+ *
+ * For each pair, against what is already in Actual:
+ *   neither side imported -> create one Actual transfer, tag both halves
+ *                            with their Up ids
+ *   both imported         -> leave alone
+ *   one imported          -> (legacy plain import) import the other plain
+ * Anything unpaired is imported as an ordinary transaction.
+ */
+
+const { mapTransaction } = require('./mapping');
+
+const PAIR_WINDOW_MS = 60 * 1000;
+const DEFAULT_SETTLE_MS = 10 * 60 * 1000;
+const ROUND_UP = 'Round Up';
+
+function roundUpId(upTxnId) {
+  return `${upTxnId}:roundup`;
+}
+
+/** Expand one linked account's Up transactions into importable items. */
+function itemsFor({ upAccountId, actualAccountId, txns }) {
+  const items = [];
+  for (const t of txns) {
+    const a = t.attributes;
+    const at = Date.parse(a.createdAt);
+    items.push({
+      upAccountId,
+      actualAccountId,
+      at,
+      counterpartUp: t.relationships?.transferAccount?.data?.id || null,
+      isRoundUpCredit: a.transactionType === ROUND_UP,
+      txn: mapTransaction(t, actualAccountId),
+    });
+    if (a.roundUp?.amount?.valueInBaseUnits) {
+      const base = mapTransaction(t, actualAccountId);
+      items.push({
+        upAccountId,
+        actualAccountId,
+        at,
+        counterpartUp: null, // destination saver isn't reported on the purchase
+        isRoundUpDebit: true,
+        txn: {
+          ...base,
+          amount: a.roundUp.amount.valueInBaseUnits,
+          payee_name: ROUND_UP,
+          imported_payee: ROUND_UP,
+          notes: `${ROUND_UP}: ${a.description}`,
+          imported_id: roundUpId(t.id),
+        },
+      });
+    }
+  }
+  return items;
+}
+
+/**
+ * Pair outgoing items with their incoming counterpart. Returns
+ * { pairs: [{ out, in }], single: [item] }.
+ */
+function pairItems(items) {
+  const incoming = items.filter((i) => i.txn.amount > 0 && i.counterpartUp);
+  const used = new Set();
+  const pairs = [];
+  const paired = new Set();
+
+  const outgoing = items.filter((i) => i.txn.amount < 0 && (i.counterpartUp || i.isRoundUpDebit));
+  for (const out of outgoing) {
+    let best = null;
+    for (const cand of incoming) {
+      if (used.has(cand) || cand.upAccountId === out.upAccountId) continue;
+      if (cand.counterpartUp !== out.upAccountId) continue;
+      if (cand.txn.amount !== -out.txn.amount) continue;
+      if (out.isRoundUpDebit ? !cand.isRoundUpCredit : out.counterpartUp !== cand.upAccountId) continue;
+      const dt = Math.abs(cand.at - out.at);
+      if (dt > PAIR_WINDOW_MS) continue;
+      if (!best || dt < best.dt) best = { cand, dt };
+    }
+    if (best) {
+      used.add(best.cand);
+      paired.add(out).add(best.cand);
+      pairs.push({ out, in: best.cand });
+    }
+  }
+  return { pairs, single: items.filter((i) => !paired.has(i)) };
+}
+
+/** Could this item still be waiting for its other half to appear in Up? */
+function awaitingCounterpart(item, linkedUpIds) {
+  if (item.isRoundUpDebit || item.isRoundUpCredit) return true;
+  return !!item.counterpartUp && linkedUpIds.has(item.counterpartUp);
+}
+
+/** Map from Actual account id to the set of imported_ids already present. */
+async function existingImportedIds(api, items) {
+  const byAccount = new Map();
+  if (!items.length) return byAccount;
+  const dates = items.map((i) => i.txn.date).sort();
+  const pad = (d, days) => {
+    const x = new Date(`${d}T00:00:00Z`);
+    x.setUTCDate(x.getUTCDate() + days);
+    return x.toISOString().slice(0, 10);
+  };
+  const start = pad(dates[0], -1);
+  const end = pad(dates[dates.length - 1], 1);
+  for (const id of new Set(items.map((i) => i.actualAccountId))) {
+    const txns = await api.getTransactions(id, start, end);
+    byAccount.set(id, new Set(txns.map((t) => t.imported_id).filter(Boolean)));
+  }
+  return byAccount;
+}
+
+/**
+ * Import Up transactions for a set of linked accounts.
+ *
+ * @param {object} api - @actual-app/api with a budget open
+ * @param {Array<{upAccountId, actualAccountId, txns}>} entries - raw Up transactions per linked account
+ * @param {object} [opts]
+ * @param {number} [opts.settleMs] - defer unpaired transfer-like items younger than this
+ * @param {number} [opts.now]
+ * @returns {Promise<Map<actualAccountId, {added, updated, transfers, deferred, errors}>>}
+ */
+async function importAll(api, entries, { settleMs = DEFAULT_SETTLE_MS, now = Date.now() } = {}) {
+  const items = entries.flatMap(itemsFor);
+  const linkedUpIds = new Set(entries.map((e) => e.upAccountId));
+  const { pairs, single } = pairItems(items);
+  const existing = await existingImportedIds(api, items);
+  const has = (item) => existing.get(item.actualAccountId)?.has(item.txn.imported_id) ?? false;
+
+  const stats = new Map(
+    entries.map((e) => [e.actualAccountId, { added: 0, updated: 0, transfers: 0, deferred: 0, errors: [] }]),
+  );
+  const plain = new Map(); // actualAccountId -> txns to importTransactions
+  const queuePlain = (item) => {
+    if (!plain.has(item.actualAccountId)) plain.set(item.actualAccountId, []);
+    plain.get(item.actualAccountId).push(item.txn);
+  };
+
+  const transferPayee = new Map(
+    (await api.getPayees()).filter((p) => p.transfer_acct).map((p) => [p.transfer_acct, p.id]),
+  );
+
+  for (const { out, in: inc } of pairs) {
+    const outExists = has(out);
+    const inExists = has(inc);
+    if (outExists && inExists) continue;
+    if (outExists || inExists) {
+      queuePlain(outExists ? inc : out);
+      continue;
+    }
+    const payee = transferPayee.get(inc.actualAccountId);
+    if (!payee) {
+      queuePlain(out);
+      queuePlain(inc);
+      continue;
+    }
+    const { payee_name: _p, imported_payee: _ip, account: _a, ...outTxn } = out.txn;
+    await api.addTransactions(out.actualAccountId, [{ ...outTxn, payee }], { runTransfers: true });
+    const [created] = (await api.getTransactions(out.actualAccountId, out.txn.date, out.txn.date)).filter(
+      (t) => t.imported_id === out.txn.imported_id,
+    );
+    if (created?.transfer_id) {
+      await api.updateTransaction(created.transfer_id, {
+        imported_id: inc.txn.imported_id,
+        cleared: inc.txn.cleared,
+        notes: inc.txn.notes,
+      });
+    }
+    stats.get(out.actualAccountId).added++;
+    stats.get(out.actualAccountId).transfers++;
+    stats.get(inc.actualAccountId).added++;
+    stats.get(inc.actualAccountId).transfers++;
+  }
+
+  for (const item of single) {
+    if (!has(item) && settleMs > 0 && now - item.at < settleMs && awaitingCounterpart(item, linkedUpIds)) {
+      stats.get(item.actualAccountId).deferred++;
+      continue;
+    }
+    queuePlain(item);
+  }
+
+  for (const [actualAccountId, txns] of plain) {
+    const res = await api.importTransactions(actualAccountId, txns);
+    const s = stats.get(actualAccountId);
+    s.added += res.added?.length ?? 0;
+    s.updated += res.updated?.length ?? 0;
+    s.errors.push(...(res.errors || []).map((e) => e.message));
+  }
+
+  return stats;
+}
+
+module.exports = { importAll, itemsFor, pairItems, roundUpId, PAIR_WINDOW_MS };

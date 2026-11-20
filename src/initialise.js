@@ -2,7 +2,7 @@
 
 const upBank = require('./upBank');
 const { withBudget } = require('./actual');
-const { mapTransaction } = require('./sync');
+const importer = require('./importer');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const SNAPSHOT_ATTEMPTS = 3;
@@ -49,16 +49,29 @@ async function snapshot(upClient, token, upAccountId, startDate) {
 }
 
 /**
- * Work out what to create for one Up account: the transactions from
- * `startDate` onwards and the opening balance that, together with those
- * transactions, reproduces the current Up balance.
+ * Work out what to create for one Up account: the Up transactions from
+ * `startDate` onwards and the opening balance that, together with what
+ * they import as (including synthesised round-ups), reproduces the current
+ * Up balance.
  */
 function plan(snap, startDate) {
-  const transactions = snap.txns
-    .map((t) => mapTransaction(t, null))
-    .filter((t) => t.date >= startDate);
+  const upTxns = snap.txns.filter((t) => t.attributes.createdAt.slice(0, 10) >= startDate);
+  const transactions = importer
+    .itemsFor({ upAccountId: '', actualAccountId: null, txns: upTxns })
+    .map((i) => i.txn);
   const total = transactions.reduce((sum, t) => sum + t.amount, 0);
-  return { transactions, openingBalance: snap.balance - total };
+  return { upTxns, transactions, openingBalance: snap.balance - total };
+}
+
+/**
+ * Default history start for an Up account: the 1st of this month, or the
+ * day the account was opened if that is later (so a brand-new account
+ * starts at zero with its full history).
+ */
+function startDateFor(upAccount, now = new Date()) {
+  const monthStart = defaultStartDate(now);
+  const opened = upAccount?.attributes?.createdAt?.slice(0, 10);
+  return opened && opened > monthStart ? opened : monthStart;
 }
 
 function addDays(date, days) {
@@ -119,38 +132,50 @@ async function createAccounts({
 
   return openBudget(actual, dataDir, async (api) => {
     const taken = new Set((await api.getAccounts()).map((a) => a.name.toLowerCase()));
-    const created = [];
-    for (const w of work) {
-      const name = accountName(w.upAccount, taken);
-      const offbudget = w.upAccount.attributes.accountType === 'HOME_LOAN';
-      const id = await api.createAccount({ name, offbudget }, w.openingBalance);
 
-      const openingDate = openingBalanceDate(startDate, w.openingBalance, w.transactions);
+    // Create every account first so transfers between them can be linked.
+    for (const w of work) {
+      w.name = accountName(w.upAccount, taken);
+      w.offbudget = w.upAccount.attributes.accountType === 'HOME_LOAN';
+      w.actualAccountId = await api.createAccount({ name: w.name, offbudget: w.offbudget }, w.openingBalance);
+      w.openingDate = openingBalanceDate(startDate, w.openingBalance, w.transactions);
       if (w.openingBalance !== 0) {
         // createAccount dates the starting balance today; move it back.
-        const [starting] = await api.getTransactions(id, '1970-01-01', today);
-        if (starting) await api.updateTransaction(starting.id, { date: openingDate });
+        const [starting] = await api.getTransactions(w.actualAccountId, '1970-01-01', today);
+        if (starting) await api.updateTransaction(starting.id, { date: w.openingDate });
       }
+    }
 
-      const txns = w.transactions.map((t) => ({ ...t, account: id }));
-      const res = txns.length ? await api.importTransactions(id, txns) : { added: [], errors: [] };
-      const balance = await api.getAccountBalance(id);
-      const warnings = (res.errors || []).map((e) => e.message);
+    // History import: no settle delay, everything Up has is final enough.
+    // Transfers to accounts linked earlier come in as plain transactions,
+    // since the other side is already in Actual that way.
+    const stats = await importer.importAll(
+      api,
+      work.map((w) => ({ upAccountId: w.upAccountId, actualAccountId: w.actualAccountId, txns: w.upTxns })),
+      { settleMs: 0 },
+    );
+
+    const created = [];
+    for (const w of work) {
+      const s = stats.get(w.actualAccountId);
+      const balance = await api.getAccountBalance(w.actualAccountId);
+      const warnings = [...s.errors];
       if (balance !== w.balance) {
         warnings.push(`Actual balance ${(balance / 100).toFixed(2)} does not match Up balance ${(w.balance / 100).toFixed(2)}`);
       }
       created.push({
         upAccountId: w.upAccountId,
-        actualAccountId: id,
-        name,
-        offbudget,
+        actualAccountId: w.actualAccountId,
+        name: w.name,
+        offbudget: w.offbudget,
         openingBalance: w.openingBalance,
-        openingDate,
-        imported: res.added?.length ?? 0,
+        openingDate: w.openingDate,
+        imported: s.added,
+        transfers: s.transfers,
         warnings,
       });
       console.log(
-        `Created "${name}" (opening ${(w.openingBalance / 100).toFixed(2)} on ${openingDate}, ${txns.length} transactions)` +
+        `Created "${w.name}" (opening ${(w.openingBalance / 100).toFixed(2)} on ${w.openingDate}, ${s.added} transactions, ${s.transfers} transfers)` +
           (warnings.length ? ` WARNING: ${warnings.join('; ')}` : ''),
       );
     }
@@ -159,4 +184,13 @@ async function createAccounts({
   });
 }
 
-module.exports = { createAccounts, defaultStartDate, isValidDate, fetchSince, plan, accountName, openingBalanceDate };
+module.exports = {
+  createAccounts,
+  defaultStartDate,
+  startDateFor,
+  isValidDate,
+  fetchSince,
+  plan,
+  accountName,
+  openingBalanceDate,
+};

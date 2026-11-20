@@ -9,6 +9,9 @@ const { withBudget } = require('./actual');
 const { SyncInProgressError } = require('./sync');
 const initialise = require('./initialise');
 
+// Sentinel value for the link page's "create new Actual account" option.
+const CREATE_NEW = '__create__';
+
 function safeEqual(a, b) {
   const ha = crypto.createHash('sha256').update(String(a)).digest();
   const hb = crypto.createHash('sha256').update(String(b)).digest();
@@ -163,13 +166,11 @@ function createApp({
       linkedAccounts: config.getLinkedAccounts(store),
       saved: req.query.saved === '1',
       defaultStartDate: initialise.defaultStartDate(),
+      createNew: CREATE_NEW,
     });
   });
 
-  app.post('/accounts/create', async (req, res) => {
-    const body = req.body || {};
-    const upAccountIds = [].concat(body.upAccountIds || []);
-    const startDate = (body.startDate || '').trim();
+  async function createAndLink(res, upAccountIds, startDate) {
     let created;
     try {
       created = await createAccounts({
@@ -192,6 +193,11 @@ function createApp({
     store.set('importFrom', importFrom);
     await config.save(store);
     res.render('created', { created, startDate });
+  }
+
+  app.post('/accounts/create', async (req, res) => {
+    const body = req.body || {};
+    await createAndLink(res, [].concat(body.upAccountIds || []), (body.startDate || '').trim());
   });
 
   app.post('/link', async (req, res) => {
@@ -199,6 +205,10 @@ function createApp({
     const upId = req.body?.account;
     const actualId = req.body?.accID;
     if (!upId) return res.status(400).send('Missing account');
+    if (actualId === CREATE_NEW) {
+      const upAccount = await upClient.getAccount(config.getUpToken(store), upId);
+      return createAndLink(res, [upId], initialise.startDateFor(upAccount));
+    }
     if (linked[upId] !== actualId) {
       // A start date only applies to the account this tool created.
       const importFrom = config.getImportFrom(store);

@@ -11,7 +11,7 @@ block content
           | Last sync #{lastSync.at}:
           ul.mb-0
             each r in lastSync.results
-              li #{r.name}: #{r.added} added, #{r.updated} updated#{r.errors.length ? ' (' + r.errors.join('; ') + ')' : ''}
+              li #{r.name}: #{r.added} added, #{r.updated} updated#{r.transfers ? ', ' + r.transfers + ' transfers' : ''}#{r.errors.length ? ' (' + r.errors.join('; ') + ')' : ''}
       else
         .alert.alert-danger Last sync #{lastSync.at} failed: #{lastSync.error}
 

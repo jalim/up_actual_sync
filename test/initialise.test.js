@@ -4,26 +4,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const init = require('../src/initialise');
 
-const upTxn = (id, date, amount) => ({
-  id,
-  attributes: {
-    createdAt: `${date}T12:00:00+11:00`,
-    amount: { valueInBaseUnits: amount },
-    description: `txn ${id}`,
-    status: 'SETTLED',
-  },
-});
+const { useLocalBudget, txnsIn } = require('./helpers/localBudget');
+const h = require('./helpers/up');
 
-const upAccount = (id, balance, attrs = {}) => ({
-  id,
-  attributes: {
-    displayName: 'Spending',
-    accountType: 'TRANSACTIONAL',
-    ownershipType: 'INDIVIDUAL',
-    balance: { valueInBaseUnits: balance },
-    ...attrs,
-  },
-});
+const budget = useLocalBudget(test);
+const upTxn = (id, date, amount) => h.upTxn({ id, amount, at: `${date}T12:00:00+11:00` });
+const upAccount = (id, balance, attrs = {}) => h.upAccount(id, balance, { displayName: 'Spending', ...attrs });
 
 test('isValidDate rejects malformed and impossible dates', () => {
   assert.equal(init.isValidDate('2026-11-01'), true);
@@ -34,6 +20,13 @@ test('isValidDate rejects malformed and impossible dates', () => {
 
 test('defaultStartDate is the first of the month', () => {
   assert.equal(init.defaultStartDate(new Date(2026, 10, 20)), '2026-11-01');
+});
+
+test('startDateFor uses the account open date when it is newer than the 1st', () => {
+  const now = new Date(2026, 10, 20);
+  assert.equal(init.startDateFor(upAccount('a', 0, { createdAt: '2026-11-12T09:00:00+11:00' }), now), '2026-11-12');
+  assert.equal(init.startDateFor(upAccount('a', 0, { createdAt: '2024-01-01T09:00:00+11:00' }), now), '2026-11-01');
+  assert.equal(init.startDateFor(undefined, now), '2026-11-01');
 });
 
 test('fetchSince starts a day early to cover AU timezones', () => {
@@ -47,6 +40,7 @@ test('plan: opening balance + imported transactions = current balance', () => {
   };
   const p = init.plan(snap, '2026-11-01');
   assert.deepEqual(p.transactions.map((t) => t.imported_id), ['b', 'c']); // 'a' is before the start date
+  assert.deepEqual(p.upTxns.map((t) => t.id), ['b', 'c']);
   assert.equal(p.openingBalance, 50000 - (-2000 + 10000));
   assert.equal(p.openingBalance + p.transactions.reduce((s, t) => s + t.amount, 0), snap.balance);
 });
@@ -65,30 +59,12 @@ test('accountName marks 2Up accounts and avoids duplicates', () => {
   assert.equal(init.accountName(upAccount('3', 0), taken), 'Spending 3');
 });
 
-function fakeApi({ existing = [], balanceOverride } = {}) {
-  const state = { accounts: [...existing], txns: [], synced: false, nextId: 1 };
-  const api = {
-    getAccounts: async () => state.accounts,
-    createAccount: async ({ name, offbudget }, initial) => {
-      const id = `act-${state.nextId++}`;
-      state.accounts.push({ id, name, offbudget });
-      if (initial) state.txns.push({ id: `sb-${id}`, account: id, amount: initial, date: '2026-11-20', starting: true });
-      return id;
-    },
-    getTransactions: async (id) => state.txns.filter((t) => t.account === id),
-    updateTransaction: async (id, fields) => Object.assign(state.txns.find((t) => t.id === id), fields),
-    importTransactions: async (id, txns) => {
-      state.txns.push(...txns.map((t) => ({ ...t, id: t.imported_id })));
-      return { added: txns.map((t) => t.imported_id), updated: [], errors: [] };
-    },
-    getAccountBalance: async (id) =>
-      balanceOverride ?? state.txns.filter((t) => t.account === id).reduce((s, t) => s + t.amount, 0),
-    sync: async () => {
-      state.synced = true;
-    },
-  };
-  return { state, openBudget: (actual, dir, fn) => fn(api) };
-}
+test('plan counts synthesised round-ups in the opening balance', () => {
+  const purchase = h.upTxn({ amount: -1800, roundUp: -200, at: '2026-11-02T12:00:00+11:00' });
+  const p = init.plan({ balance: 10000, txns: [purchase] }, '2026-11-01');
+  assert.equal(p.transactions.length, 2);
+  assert.equal(p.openingBalance, 12000);
+});
 
 function fakeUp(accounts, txnsById, balances = {}) {
   const calls = { getAccount: 0 };
@@ -108,58 +84,70 @@ function fakeUp(accounts, txnsById, balances = {}) {
   };
 }
 
+const create = (opts) =>
+  init.createAccounts({ token: 'tok', actual: {}, startDate: '2026-11-01', today: '2026-11-20', openBudget: budget.openBudget, ...opts });
+
 test('createAccounts creates, dates the opening balance, imports and verifies', async () => {
-  const { state, openBudget } = fakeApi({ existing: [{ id: 'x', name: 'Spending' }] });
+  await budget.api.createAccount({ name: 'Spending' }, 0); // force a name clash
   const up = fakeUp(
-    [upAccount('up-1', 10000), upAccount('up-2', 500000, { displayName: 'Home', accountType: 'HOME_LOAN' })],
+    [upAccount('up-1', 10000), upAccount('up-2', -500000, { displayName: 'Home', accountType: 'HOME_LOAN' })],
     { 'up-1': [upTxn('t1', '2026-11-02', -2500), upTxn('t0', '2026-10-31', -100)] },
   );
-  const created = await init.createAccounts({
-    token: 'tok',
-    actual: {},
-    upAccountIds: ['up-1', 'up-2'],
-    startDate: '2026-11-01',
-    today: '2026-11-20',
-    upClient: up,
-    openBudget,
-  });
-  assert.equal(created.length, 2);
-  const [spend, home] = created;
+  const [spend, home] = await create({ upAccountIds: ['up-1', 'up-2'], upClient: up });
   assert.equal(spend.name, 'Spending 2');
   assert.equal(spend.openingBalance, 12500);
   assert.equal(spend.openingDate, '2026-11-01');
   assert.equal(spend.imported, 1);
   assert.deepEqual(spend.warnings, []);
   assert.equal(home.offbudget, true);
-  const sb = state.txns.find((t) => t.starting && t.account === spend.actualAccountId);
-  assert.equal(sb.date, '2026-11-01');
-  assert.ok(state.synced);
+  assert.deepEqual(home.warnings, []);
+  const t = await txnsIn(budget.api, spend.actualAccountId);
+  assert.deepEqual(t.map((x) => [x.date, x.amount, !!x.starting_balance_flag]), [
+    ['2026-11-01', 12500, true],
+    ['2026-11-02', -2500, false],
+  ]);
 });
 
-test('createAccounts warns when the Actual balance does not match Up', async () => {
-  const { openBudget } = fakeApi({ balanceOverride: 1 });
-  const up = fakeUp([upAccount('up-1', 10000)], {});
-  const [c] = await init.createAccounts({
-    token: 'tok', actual: {}, upAccountIds: ['up-1'], startDate: '2026-11-01', today: '2026-11-20', upClient: up, openBudget,
-  });
-  assert.match(c.warnings[0], /does not match/);
+test('createAccounts links transfers and round-ups between accounts created together', async () => {
+  const [out, inc] = h.upTransfer('up-s', 'up-v', 3000, '2026-11-05T10:00:00+11:00', '2026-11-05T10:00:01+11:00');
+  const purchase = h.upTxn({ account: 'up-s', amount: -1800, roundUp: -200, at: '2026-11-06T10:00:00+11:00' });
+  const credit = h.upTxn({ account: 'up-v', amount: 200, transferAccount: 'up-s', type: 'Round Up', at: '2026-11-06T10:00:02+11:00' });
+  const up = fakeUp(
+    [upAccount('up-s', 50000, { displayName: 'S' }), upAccount('up-v', 8000, { displayName: 'V', accountType: 'SAVER' })],
+    { 'up-s': [out, purchase], 'up-v': [inc, credit] },
+  );
+  const [s, v] = await create({ upAccountIds: ['up-s', 'up-v'], upClient: up });
+  assert.deepEqual(s.warnings, []);
+  assert.deepEqual(v.warnings, []);
+  assert.equal(s.transfers, 2);
+  assert.equal(v.transfers, 2);
+  assert.equal(await budget.api.getAccountBalance(s.actualAccountId), 50000);
+  assert.equal(await budget.api.getAccountBalance(v.actualAccountId), 8000);
+});
+
+test('createAccounts imports transfers to already-linked accounts as plain', async () => {
+  const [, inc] = h.upTransfer('up-existing', 'up-new', 4000, '2026-11-05T10:00:00+11:00');
+  const up = fakeUp([upAccount('up-new', 4000, { displayName: 'New' })], { 'up-new': [inc] });
+  const [c] = await create({ upAccountIds: ['up-new'], upClient: up });
+  const t = await txnsIn(budget.api, c.actualAccountId);
+  assert.equal(t.length, 1);
+  assert.equal(t[0].transfer_id, null);
+  assert.equal(c.openingBalance, 0);
+  assert.deepEqual(c.warnings, []);
 });
 
 test('createAccounts retries when the Up balance moves mid-read', async (t) => {
   t.mock.method(console, 'log', () => {});
-  const { openBudget } = fakeApi();
-  const up = fakeUp([upAccount('up-1', 300)], {}, { 'up-1': [100, 200, 300, 300] });
-  const [c] = await init.createAccounts({
-    token: 'tok', actual: {}, upAccountIds: ['up-1'], startDate: '2026-11-01', today: '2026-11-20', upClient: up, openBudget,
-  });
+  const up = fakeUp([upAccount('up-r', 300, { displayName: 'R' })], {}, { 'up-r': [100, 200, 300, 300] });
+  const [c] = await create({ upAccountIds: ['up-r'], upClient: up });
   assert.equal(c.openingBalance, 300);
   assert.equal(up.calls.getAccount, 4);
 });
 
 test('createAccounts validates input before touching anything', async () => {
-  const opts = { token: 'tok', actual: {}, upAccountIds: ['a'], today: '2026-11-20', openBudget: () => assert.fail() };
-  await assert.rejects(init.createAccounts({ ...opts, startDate: 'nope' }), /Invalid start date/);
-  await assert.rejects(init.createAccounts({ ...opts, startDate: '2026-12-01' }), /future/);
-  await assert.rejects(init.createAccounts({ ...opts, startDate: '2026-11-01', upAccountIds: [] }), /No Up accounts/);
-  await assert.rejects(init.createAccounts({ ...opts, token: '', startDate: '2026-11-01' }), /token/);
+  const opts = { upAccountIds: ['a'], openBudget: () => assert.fail() };
+  await assert.rejects(create({ ...opts, startDate: 'nope' }), /Invalid start date/);
+  await assert.rejects(create({ ...opts, startDate: '2026-12-01' }), /future/);
+  await assert.rejects(create({ ...opts, upAccountIds: [] }), /No Up accounts/);
+  await assert.rejects(create({ ...opts, token: '' }), /token/);
 });

@@ -21,7 +21,11 @@ async function start(t, { settings = {}, runSync = async () => [], fileContents 
     settings: { ...config.settings(store), ...settings },
     runSync,
     getLastSync: () => null,
-    upClient: { validate: async () => true, getAccounts: async () => [] },
+    upClient: {
+      validate: async () => true,
+      getAccounts: async () => [],
+      getAccount: async (token, id) => ({ id, attributes: { createdAt: '2099-01-01T00:00:00+11:00' } }),
+    },
     ...(createAccounts && { createAccounts }),
   });
   const server = await new Promise((resolve) => {
@@ -138,4 +142,23 @@ test('POST /accounts/create shows errors', async (t) => {
   const res = await fetch(`${base}/accounts/create`, { method: 'POST', body: new URLSearchParams({ startDate: 'x' }) });
   assert.equal(res.status, 400);
   assert.match(await res.text(), /Invalid start date/);
+});
+
+test('choosing "create new" on the link page creates and links that account', async (t) => {
+  let received;
+  const { base, file } = await start(t, {
+    createAccounts: async (opts) => {
+      received = opts;
+      return [{ upAccountId: 'up-new', actualAccountId: 'act-new', name: 'New', offbudget: false,
+        openingBalance: 0, openingDate: opts.startDate, imported: 0, transfers: 0, warnings: [] }];
+    },
+  });
+  const res = await fetch(`${base}/link`, { method: 'POST', body: new URLSearchParams({ account: 'up-new', accID: '__create__' }) });
+  assert.equal(res.status, 200);
+  assert.deepEqual(received.upAccountIds, ['up-new']);
+  // The fake account opened "in 2099", so history starts from its open date.
+  assert.equal(received.startDate, '2099-01-01');
+  const saved = JSON.parse(fs.readFileSync(file));
+  assert.deepEqual(saved.linkedAccounts, { 'up-new': 'act-new' });
+  assert.deepEqual(saved.importFrom, { 'up-new': '2099-01-01' });
 });
