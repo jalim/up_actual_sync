@@ -9,6 +9,9 @@ module.exports = [
   {
     files: ['**/*.js'],
     languageOptions: { sourceType: 'commonjs', globals: globals.node },
+    rules: {
+      'no-unused-vars': ['error', { varsIgnorePattern: '^_', argsIgnorePattern: '^_', ignoreRestSiblings: true }],
+    },
   },
   {
     files: ['public/**/*.js'],

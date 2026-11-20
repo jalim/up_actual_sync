@@ -7,6 +7,7 @@ const config = require('./config');
 const upBank = require('./upBank');
 const { withBudget } = require('./actual');
 const { SyncInProgressError } = require('./sync');
+const initialise = require('./initialise');
 
 function safeEqual(a, b) {
   const ha = crypto.createHash('sha256').update(String(a)).digest();
@@ -52,8 +53,16 @@ function sameOrigin(req, res, next) {
  * @param {() => Promise<any>} deps.runSync
  * @param {() => object|null} deps.getLastSync
  * @param {typeof upBank} [deps.upClient]
+ * @param {typeof initialise.createAccounts} [deps.createAccounts]
  */
-function createApp({ store, settings, runSync, getLastSync, upClient = upBank }) {
+function createApp({
+  store,
+  settings,
+  runSync,
+  getLastSync,
+  upClient = upBank,
+  createAccounts = initialise.createAccounts,
+}) {
   const app = express();
   app.disable('x-powered-by');
   app.set('view engine', 'pug');
@@ -146,13 +155,43 @@ function createApp({ store, settings, runSync, getLastSync, upClient = upBank })
         id: a.id,
         displayName: a.attributes.displayName,
         accountType: a.attributes.accountType,
+        ownershipType: a.attributes.ownershipType,
       })),
       actualAccounts: actualAccounts
         .filter((a) => !a.closed)
         .sort((a, b) => a.name.localeCompare(b.name)),
       linkedAccounts: config.getLinkedAccounts(store),
       saved: req.query.saved === '1',
+      defaultStartDate: initialise.defaultStartDate(),
     });
+  });
+
+  app.post('/accounts/create', async (req, res) => {
+    const body = req.body || {};
+    const upAccountIds = [].concat(body.upAccountIds || []);
+    const startDate = (body.startDate || '').trim();
+    let created;
+    try {
+      created = await createAccounts({
+        token: config.getUpToken(store),
+        actual: config.getActual(store),
+        dataDir: settings.dataDir,
+        upAccountIds,
+        startDate,
+      });
+    } catch (err) {
+      return res.status(400).render('error', { message: `Could not create accounts: ${err.message}` });
+    }
+    const linked = config.getLinkedAccounts(store);
+    const importFrom = config.getImportFrom(store);
+    for (const c of created) {
+      linked[c.upAccountId] = c.actualAccountId;
+      importFrom[c.upAccountId] = startDate;
+    }
+    store.set('linkedAccounts', linked);
+    store.set('importFrom', importFrom);
+    await config.save(store);
+    res.render('created', { created, startDate });
   });
 
   app.post('/link', async (req, res) => {
@@ -160,6 +199,12 @@ function createApp({ store, settings, runSync, getLastSync, upClient = upBank })
     const upId = req.body?.account;
     const actualId = req.body?.accID;
     if (!upId) return res.status(400).send('Missing account');
+    if (linked[upId] !== actualId) {
+      // A start date only applies to the account this tool created.
+      const importFrom = config.getImportFrom(store);
+      delete importFrom[upId];
+      store.set('importFrom', importFrom);
+    }
     if (actualId) linked[upId] = actualId;
     else delete linked[upId];
     store.set('linkedAccounts', linked);

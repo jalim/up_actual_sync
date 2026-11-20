@@ -85,6 +85,15 @@ function getLinkedAccounts(store) {
   return { ...(store.get('linkedAccounts') || {}) };
 }
 
+/**
+ * Per-Up-account earliest date to import. Set for accounts created by this
+ * tool so the regular lookback never re-imports history that is already
+ * covered by the opening balance.
+ */
+function getImportFrom(store) {
+  return { ...(store.get('importFrom') || {}) };
+}
+
 function save(store) {
   return new Promise((resolve, reject) => {
     store.save((err) => (err ? reject(err) : resolve()));
@@ -100,5 +109,6 @@ module.exports = {
   getUpToken,
   getActual,
   getLinkedAccounts,
+  getImportFrom,
   save,
 };

@@ -9,7 +9,7 @@ const config = require('../src/config');
 const { createApp } = require('../src/server');
 const { SyncInProgressError } = require('../src/sync');
 
-async function start(t, { settings = {}, runSync = async () => [], fileContents = {} } = {}) {
+async function start(t, { settings = {}, runSync = async () => [], fileContents = {}, createAccounts } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'uas-'));
   const file = path.join(dir, 'config.json');
   fs.writeFileSync(file, JSON.stringify(fileContents));
@@ -22,6 +22,7 @@ async function start(t, { settings = {}, runSync = async () => [], fileContents 
     runSync,
     getLastSync: () => null,
     upClient: { validate: async () => true, getAccounts: async () => [] },
+    ...(createAccounts && { createAccounts }),
   });
   const server = await new Promise((resolve) => {
     const s = app.listen(0, () => resolve(s));
@@ -106,4 +107,35 @@ test('setup requires an Actual API key or password', async (t) => {
   });
   assert.equal(res.status, 400);
   assert.match(await res.text(), /API key or server password/);
+});
+
+test('POST /accounts/create links new accounts and records the start date', async (t) => {
+  let received;
+  const { base, file } = await start(t, {
+    createAccounts: async (opts) => {
+      received = opts;
+      return opts.upAccountIds.map((id, i) => ({
+        upAccountId: id, actualAccountId: `act-${i}`, name: `N${i}`, offbudget: false,
+        openingBalance: 100, openingDate: opts.startDate, imported: 2, warnings: [],
+      }));
+    },
+  });
+  const body = new URLSearchParams([['upAccountIds', 'up-a'], ['upAccountIds', 'up-b'], ['startDate', '2026-11-01']]);
+  const res = await fetch(`${base}/accounts/create`, { method: 'POST', body });
+  assert.equal(res.status, 200);
+  assert.deepEqual(received.upAccountIds, ['up-a', 'up-b']);
+  const saved = JSON.parse(fs.readFileSync(file));
+  assert.deepEqual(saved.linkedAccounts, { 'up-a': 'act-0', 'up-b': 'act-1' });
+  assert.deepEqual(saved.importFrom, { 'up-a': '2026-11-01', 'up-b': '2026-11-01' });
+
+  // Re-linking to a different Actual account drops the start date.
+  await fetch(`${base}/link`, { method: 'POST', body: new URLSearchParams({ account: 'up-a', accID: 'other' }), redirect: 'manual' });
+  assert.deepEqual(JSON.parse(fs.readFileSync(file)).importFrom, { 'up-b': '2026-11-01' });
+});
+
+test('POST /accounts/create shows errors', async (t) => {
+  const { base } = await start(t, { createAccounts: async () => { throw new Error('Invalid start date: x'); } });
+  const res = await fetch(`${base}/accounts/create`, { method: 'POST', body: new URLSearchParams({ startDate: 'x' }) });
+  assert.equal(res.status, 400);
+  assert.match(await res.text(), /Invalid start date/);
 });

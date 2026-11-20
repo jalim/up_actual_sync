@@ -1,0 +1,24 @@
+extends layout
+
+block content
+  h1.h3 Accounts created
+  p Created and linked #{created.length} account#{created.length === 1 ? '' : 's'}, with history from #{startDate}.
+  table.table
+    thead
+      tr
+        th Account
+        th.text-end Opening balance
+        th Opening date
+        th.text-end Transactions
+    tbody
+      each c in created
+        tr
+          td #{c.name}#{c.offbudget ? ' (off-budget)' : ''}
+          td.text-end= (c.openingBalance / 100).toFixed(2)
+          td= c.openingDate
+          td.text-end= c.imported
+        if c.warnings.length
+          tr
+            td.text-danger(colspan=4) ⚠ #{c.warnings.join('; ')}
+  p.text-body-secondary Transfers between your Up accounts appear as separate transactions in each account.
+  a.btn.btn-primary(href='/link') Back to linking

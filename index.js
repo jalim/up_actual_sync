@@ -17,6 +17,7 @@ async function runSync() {
       token: config.getUpToken(store),
       actual: config.getActual(store),
       linkedAccounts: config.getLinkedAccounts(store),
+      importFrom: config.getImportFrom(store),
       dataDir: settings.dataDir,
       syncDays: settings.syncDays,
     });

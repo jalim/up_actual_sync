@@ -47,7 +47,16 @@ function sinceDate(days, now = new Date()) {
  *
  * @returns {Promise<Array<{upAccountId, actualAccountId, name, added, updated, errors}>>}
  */
-async function run({ token, actual, linkedAccounts, dataDir, syncDays, upClient = upBank, openBudget = withBudget }) {
+async function run({
+  token,
+  actual,
+  linkedAccounts,
+  importFrom = {},
+  dataDir,
+  syncDays,
+  upClient = upBank,
+  openBudget = withBudget,
+}) {
   if (running) throw new SyncInProgressError();
   running = true;
   const started = Date.now();
@@ -66,10 +75,11 @@ async function run({ token, actual, linkedAccounts, dataDir, syncDays, upClient 
     const fetched = [];
     for (const [upAccountId, actualAccountId] of links) {
       const txns = await upClient.getTransactions(token, upAccountId, since);
+      const from = importFrom[upAccountId] || '';
       fetched.push({
         upAccountId,
         actualAccountId,
-        transactions: txns.map((t) => mapTransaction(t, actualAccountId)),
+        transactions: txns.map((t) => mapTransaction(t, actualAccountId)).filter((t) => t.date >= from),
       });
     }
 

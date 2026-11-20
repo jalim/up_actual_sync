@@ -2,9 +2,33 @@ extends layout
 
 block content
   h1.h3 Link accounts
-  p Choose which Actual account each Up account syncs into.
   if saved
     .alert.alert-success Saved.
+
+  - const unlinked = upAccounts.filter((u) => !linkedAccounts[u.id])
+  if unlinked.length
+    .card.mb-4
+      .card-body
+        h2.h5.card-title Create Actual accounts from Up
+        p.card-text.text-body-secondary
+          | Creates a new Actual account for each selected Up account, imports every transaction from the start date,
+          | and sets an opening balance so the Actual balance matches Up today.
+        form(method='POST' action='/accounts/create')
+          each up in unlinked
+            .form-check
+              input.form-check-input(type='checkbox' name='upAccountIds' value=up.id id='create-' + up.id checked)
+              label.form-check-label(for='create-' + up.id) #{up.displayName}
+                small.text-body-secondary  (#{up.accountType}#{up.ownershipType === 'JOINT' ? ', 2Up' : ''})
+          .row.g-2.align-items-end.mt-2
+            .col-sm-4
+              label.form-label(for='startDate') Import history from
+              input#startDate.form-control(type='date' name='startDate' required value=defaultStartDate)
+            .col-sm-4
+              button.btn.btn-primary(type='submit') Create and link
+          .form-text.mt-2 Home loan accounts are created off-budget.
+
+  h2.h5 Existing links
+  p Choose which Actual account each Up account syncs into.
   each up in upAccounts
     form.row.g-2.align-items-center.mb-3(method='POST' action='/link')
       input(type='hidden' name='account' value=up.id)

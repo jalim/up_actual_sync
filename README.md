@@ -28,7 +28,7 @@ docker run -d --name up-actual-sync \
 Then open `http://localhost:3000`:
 
 1. **Setup**: enter your Up token, Actual server URL, an Actual API key or server password (see [Actual authentication](#actual-authentication)), budget sync ID (Actual → Settings → Advanced → Sync ID), and the end-to-end encryption password if your budget is encrypted. Saving verifies both connections.
-2. **Link accounts**: pick the Actual account for each Up account you want synced.
+2. **Link accounts**: either let the tool create Actual accounts for your Up accounts (see [Starting a new budget](#starting-a-new-budget)), or pick an existing Actual account for each Up account.
 3. **Sync now**, or wait for the schedule.
 
 The container runs as uid 1000 (`node`), so the mounted config directory must be writable by that user (`sudo chown 1000:1000 ./config`).
@@ -78,6 +78,27 @@ Use **one** of:
 - **Server password**, for servers using password login. Set it as `actual.serverPassword`.
 
 If both are set, the API key is used. The budget's end-to-end encryption password (`actual.budgetEncryption`) is separate and still needed if the budget is encrypted.
+
+## Starting a new budget
+
+The tool can't create the budget file itself: API keys belong to one budget, so the budget has to exist first.
+
+1. In Actual, create a new empty budget, then create an API key for it (see above).
+2. Enter the key and the budget's sync ID on **Setup**.
+3. On **Link accounts**, under *Create Actual accounts from Up*, tick the Up accounts you want, choose an **Import history from** date (defaults to the 1st of this month), and select **Create and link**.
+
+For each selected account the tool:
+
+- creates an Actual account with the same name (2Up accounts get a "(2Up)" suffix, and duplicate names get a number); home loans are created off-budget
+- imports every Up transaction from the start date
+- adds a *Starting Balance* on the start date, set so that the Actual balance equals the current Up balance
+- checks the resulting Actual balance against Up and shows a warning if they differ
+
+The start date is saved per account (`importFrom` in the config file), so the regular sync never imports anything earlier and double-counts the opening balance. Linking that Up account to a different Actual account later removes its start date.
+
+If an imported transaction has the same amount as the opening balance within 7 days of the start date, the opening balance is dated 8 days before the start date. Otherwise Actual's duplicate detection would merge the two.
+
+Transfers between your own Up accounts (e.g. moving money to a Saver) are imported as ordinary transactions in each account, not as Actual transfers.
 
 ## Upgrading from 1.x
 

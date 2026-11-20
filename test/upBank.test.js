@@ -27,7 +27,7 @@ test('getTransactions follows links.next across pages', async () => {
     },
   ]);
   const since = new Date('2026-11-01T00:00:00Z');
-  const txns = await up.getTransactions('tok', 'acc1', since, f);
+  const txns = await up.getTransactions('tok', 'acc1', since, { fetchImpl: f });
   assert.deepEqual(txns.map((t) => t.id), ['t1', 't2', 't3']);
   assert.equal(f.calls.length, 2);
   const first = new URL(f.calls[0].url);
@@ -40,7 +40,7 @@ test('API errors surface status and detail', async () => {
   const f = fakeFetch([
     { prefix: up.BASE_URL, respond: { status: 500, body: { errors: [{ detail: 'boom' }] } } },
   ]);
-  await assert.rejects(up.getAccounts('tok', f), (err) => {
+  await assert.rejects(up.getAccounts('tok', { fetchImpl: f }), (err) => {
     assert.ok(err instanceof up.UpApiError);
     assert.equal(err.status, 500);
     assert.match(err.message, /boom/);
@@ -50,18 +50,19 @@ test('API errors surface status and detail', async () => {
 
 test('validate returns false on 401 and for empty token', async () => {
   const f = fakeFetch([{ prefix: up.BASE_URL, respond: { status: 401, body: {} } }]);
-  assert.equal(await up.validate('bad', f), false);
-  assert.equal(await up.validate('', f), false);
+  assert.equal(await up.validate('bad', { fetchImpl: f }), false);
+  assert.equal(await up.validate('', { fetchImpl: f }), false);
 });
 
 test('validate rethrows non-auth failures', async () => {
   const f = fakeFetch([{ prefix: up.BASE_URL, respond: { status: 503, body: {} } }]);
-  await assert.rejects(up.validate('tok', f), /503/);
+  await assert.rejects(up.validate('tok', { fetchImpl: f }), /503/);
 });
 
 test('pagination has a hard page limit', async () => {
   const f = fakeFetch([
     { prefix: up.BASE_URL, respond: { body: { data: [{}], links: { next: `${up.BASE_URL}/accounts?again` } } } },
   ]);
-  await assert.rejects(up.getAccounts('tok', f), /exceeded/);
+  await assert.rejects(up.getAccounts('tok', { fetchImpl: f, maxPages: 3 }), /exceeded 3 pages/);
+  assert.equal(f.calls.length, 3);
 });

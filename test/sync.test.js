@@ -132,3 +132,22 @@ test('run rejects concurrent syncs', async () => {
 test('run requires a token', async () => {
   await assert.rejects(sync.run({ token: '', linkedAccounts: { a: 'b' } }), /token/);
 });
+
+test('run never imports transactions before an account\'s importFrom date', async () => {
+  const { calls, openBudget } = fakeBudget([{ id: 'act-1', name: 'A' }]);
+  await sync.run({
+    token: 'tok',
+    actual: {},
+    linkedAccounts: { 'up-1': 'act-1' },
+    importFrom: { 'up-1': '2026-11-19' },
+    syncDays: 5,
+    upClient: {
+      getTransactions: async () => [
+        upTxn('old', { createdAt: '2026-11-18T09:00:00+11:00' }),
+        upTxn('new', { createdAt: '2026-11-19T09:00:00+11:00' }),
+      ],
+    },
+    openBudget,
+  });
+  assert.deepEqual(calls.imports[0].txns.map((t) => t.imported_id), ['new']);
+});
