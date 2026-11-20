@@ -11,6 +11,11 @@ block content
       p.mb-2
         | These links point to Up accounts that have been deleted, so they are skipped when syncing.
         | Unlink them, then close the Actual account in Actual if you no longer need it.
+      p.mb-2
+        | When Up deletes a saver it moves any leftover balance to another account as an ordinary deposit, and that
+        | deposit gets imported. Before closing the Actual account, change that deposit's payee to a transfer from the
+        | old account so its balance becomes $0. Don't let Actual transfer the balance again when closing, or it
+        | will be counted twice.
       each s in staleLinks
         form.d-flex.align-items-center.gap-2.mb-1(method='POST' action='/link')
           input(type='hidden' name='account' value=s.upId)
@@ -54,6 +59,9 @@ block content
             | Actual can't switch an account between on- and off-budget later, so choose here.
 
   h2.h5 Existing links
+  form.mb-3(method='POST' action='/transfers/preview')
+    button.btn.btn-sm.btn-outline-secondary(type='submit') Link existing transfers…
+    span.form-text.ms-2 Turn transfers imported as two ordinary transactions into Actual transfers.
   p Choose which Actual account each Up account syncs into, or pick #[em ➕ Create new Actual account] to create one with its history from the 1st of this month (or since the Up account was opened, if later).
   each up in upAccounts
     form.row.g-2.align-items-center.mb-3(method='POST' action='/link')

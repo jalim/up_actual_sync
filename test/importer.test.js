@@ -130,3 +130,66 @@ test('two identical transfers pair one-to-one', async () => {
   assert.equal((await txnsIn(budget.api, ids.saver)).length, 2);
   assert.equal(await bal(ids.saver), 1000);
 });
+
+async function importPlain(id, upTxns) {
+  const { mapTransaction } = require('../src/mapping');
+  await budget.api.importTransactions(id, upTxns.map((t) => mapTransaction(t, id)));
+}
+
+test('linkExistingTransfers converts plain pairs into transfers, idempotently', async () => {
+  const ids = await accounts('spend', 'saver');
+  const [out, inc] = upTransfer('up-spend', 'up-saver', 2500, '2026-11-08T10:00:00+11:00', '2026-11-08T10:00:01+11:00');
+  const purchase = upTxn({ account: 'up-spend', amount: -900, roundUp: -100, at: '2026-11-09T10:00:00+11:00' });
+  const credit = upTxn({ account: 'up-saver', amount: 100, transferAccount: 'up-spend', type: 'Round Up', at: '2026-11-09T10:00:02+11:00' });
+  const entries = [entry('up-spend', ids.spend, [out, purchase]), entry('up-saver', ids.saver, [inc, credit])];
+  // Legacy state: everything imported plain, round-up debit included.
+  const legacy = importer.itemsFor(entries[0]).map((i) => i.txn);
+  await budget.api.importTransactions(ids.spend, legacy);
+  await importPlain(ids.saver, [inc, credit]);
+
+  const dry = await importer.linkExistingTransfers(budget.api, entries, { dryRun: true });
+  assert.deepEqual(dry, { pairs: 2, linked: 2, alreadyLinked: 0, skipped: 0 });
+  assert.ok((await txnsIn(budget.api, ids.spend)).every((t) => !t.transfer_id), 'dry run changes nothing');
+
+  const res = await importer.linkExistingTransfers(budget.api, entries);
+  assert.equal(res.linked, 2);
+  const spend = await txnsIn(budget.api, ids.spend);
+  const saver = await txnsIn(budget.api, ids.saver);
+  assert.equal(saver.length, 2);
+  assert.ok(saver.every((t) => t.transfer_id && t.imported_id), 'saver halves are transfers carrying their Up ids');
+  assert.deepEqual(saver.map((t) => t.imported_id).sort(), [inc.id, credit.id].sort());
+  assert.equal(spend.filter((t) => t.transfer_id).length, 2);
+  assert.equal(await bal(ids.spend), -2500 - 900 - 100);
+  assert.equal(await bal(ids.saver), 2600);
+
+  // A normal sync afterwards adds nothing, and a second repair finds nothing to do.
+  await run(entries);
+  assert.equal((await txnsIn(budget.api, ids.saver)).length, 2);
+  assert.equal((await txnsIn(budget.api, ids.spend)).length, 3);
+  assert.deepEqual(await importer.linkExistingTransfers(budget.api, entries), { pairs: 2, linked: 0, alreadyLinked: 2, skipped: 0 });
+});
+
+test('linkExistingTransfers keeps the category on the on-budget half of an off-budget transfer', async () => {
+  const kid = await budget.api.createAccount({ name: `kid-${Math.random()}`, offbudget: true }, 0);
+  const home = await budget.api.createAccount({ name: `home-${Math.random()}` }, 0);
+  const group = await budget.api.createCategoryGroup({ name: `g-${Math.random()}` });
+  const cat = await budget.api.createCategory({ name: 'Pocket money', group_id: group });
+  const [out, inc] = upTransfer('up-kid', 'up-home', 400, '2026-11-08T10:00:00+11:00');
+  await importPlain(kid, [out]);
+  await importPlain(home, [inc]);
+  const [plainIn] = await txnsIn(budget.api, home);
+  await budget.api.updateTransaction(plainIn.id, { category: cat });
+
+  await importer.linkExistingTransfers(budget.api, [entry('up-kid', kid, [out]), entry('up-home', home, [inc])]);
+  const [linkedIn] = await txnsIn(budget.api, home);
+  assert.ok(linkedIn.transfer_id);
+  assert.equal(linkedIn.category, cat);
+});
+
+test('linkExistingTransfers skips pairs with a missing half', async () => {
+  const ids = await accounts('spend', 'saver');
+  const [out, inc] = upTransfer('up-spend', 'up-saver', 100, '2026-11-08T10:00:00+11:00');
+  await importPlain(ids.spend, [out]);
+  const res = await importer.linkExistingTransfers(budget.api, [entry('up-spend', ids.spend, [out]), entry('up-saver', ids.saver, [inc])]);
+  assert.deepEqual(res, { pairs: 1, linked: 0, alreadyLinked: 0, skipped: 1 });
+});

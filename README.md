@@ -112,6 +112,10 @@ Round-ups need special handling. Up records the round-up only as an extra amount
 - Pairs where one side was already imported as an ordinary transaction (e.g. by an older version) stay as ordinary transactions, so nothing is double-counted.
 - When an account is created with history, transfers to accounts that were linked earlier are imported as ordinary transactions for that history.
 
+To convert pairs that were imported as two ordinary transactions (by an older version, or before both accounts were linked), use **Link existing transfers…** on the **Link accounts** page. It shows how many pairs it found and can link, and changes nothing until you confirm. Each pair keeps its Up transaction IDs, so later syncs don't re-import anything.
+
+**Deleting a saver in Up:** Up moves any leftover balance into another account as an ordinary deposit, and the tool imports it. Unlink the deleted account on **Link accounts** (it's listed under *No longer in Up*). Before closing it in Actual, change that deposit's payee to a transfer from the old account so its balance becomes $0. If you let Actual's close dialog transfer the balance instead, the money is counted twice.
+
 **Upgrading an existing budget:** older versions didn't import round-ups, so a spending account with round-ups enabled is short in Actual by every round-up made before this version. Correct it with a one-off balance adjustment in Actual (reconcile the account to the Up balance), or recreate the account using the tool.
 
 ## Upgrading from 1.x

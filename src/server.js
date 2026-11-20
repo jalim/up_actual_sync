@@ -8,6 +8,7 @@ const upBank = require('./upBank');
 const { withBudget } = require('./actual');
 const { SyncInProgressError } = require('./sync');
 const initialise = require('./initialise');
+const repair = require('./repair');
 
 // Sentinel values for the link page's "create new Actual account" options.
 const CREATE_NEW = '__create__';
@@ -77,6 +78,7 @@ function createApp({
   getLastSync,
   upClient = upBank,
   createAccounts = initialise.createAccounts,
+  linkTransfers = repair.linkExistingTransfers,
 }) {
   const app = express();
   app.disable('x-powered-by');
@@ -182,6 +184,30 @@ function createApp({
       createNew: CREATE_NEW,
       createNewOffBudget: CREATE_NEW_OFF_BUDGET,
     });
+  });
+
+  async function transfers(req, res, dryRun) {
+    let result;
+    try {
+      result = await linkTransfers({
+        token: config.getUpToken(store),
+        actual: config.getActual(store),
+        linkedAccounts: config.getLinkedAccounts(store),
+        importFrom: config.getImportFrom(store),
+        dataDir: settings.dataDir,
+        dryRun,
+      });
+    } catch (err) {
+      const status = err instanceof SyncInProgressError ? 409 : 400;
+      return res.status(status).render('error', { message: `Could not link transfers: ${err.message}` });
+    }
+    res.render('transfers', { result, done: !dryRun });
+  }
+
+  app.post('/transfers/preview', (req, res) => transfers(req, res, true));
+  app.post('/transfers/link', (req, res) => {
+    if (req.body?.confirm !== '1') return res.redirect('/link');
+    return transfers(req, res, false);
   });
 
   async function createAndLink(res, upAccountIds, startDate, offBudgetIds) {

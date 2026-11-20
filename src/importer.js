@@ -202,4 +202,69 @@ async function importAll(api, entries, { settleMs = DEFAULT_SETTLE_MS, now = Dat
   return stats;
 }
 
-module.exports = { importAll, itemsFor, pairItems, roundUpId, PAIR_WINDOW_MS };
+/**
+ * Turn transfer pairs that were imported as two ordinary transactions
+ * (e.g. by a version without transfer support) into Actual transfers.
+ *
+ * For each pair where both halves exist, neither is a transfer and neither
+ * is split: set the outgoing half's payee to the destination account's
+ * transfer payee (Actual then creates the incoming half), delete the old
+ * incoming copy, and move its Up id, cleared flag and notes onto the new
+ * half. Later syncs therefore see both Up ids exactly as before.
+ *
+ * @returns {Promise<{pairs, linked, alreadyLinked, skipped}>}
+ */
+async function linkExistingTransfers(api, entries, { dryRun = false } = {}) {
+  const items = entries.flatMap(itemsFor);
+  const { pairs } = pairItems(items);
+  const result = { pairs: pairs.length, linked: 0, alreadyLinked: 0, skipped: 0 };
+  if (!pairs.length) return result;
+
+  const accounts = new Map((await api.getAccounts()).map((a) => [a.id, a]));
+  const transferPayee = new Map(
+    (await api.getPayees()).filter((p) => p.transfer_acct).map((p) => [p.transfer_acct, p.id]),
+  );
+  const dates = items.map((i) => i.txn.date).sort();
+  const index = new Map();
+  for (const id of new Set(entries.map((e) => e.actualAccountId))) {
+    for (const t of await api.getTransactions(id, dates[0], dates[dates.length - 1])) {
+      if (t.imported_id) index.set(`${id}|${t.imported_id}`, t);
+    }
+  }
+
+  for (const p of pairs) {
+    const out = index.get(`${p.out.actualAccountId}|${p.out.txn.imported_id}`);
+    const inn = index.get(`${p.in.actualAccountId}|${p.in.txn.imported_id}`);
+    if (out?.transfer_id && inn?.transfer_id && out.transfer_id === inn.id) {
+      result.alreadyLinked++;
+      continue;
+    }
+    const payee = transferPayee.get(p.in.actualAccountId);
+    if (!out || !inn || out.transfer_id || inn.transfer_id || out.is_parent || inn.is_parent || !payee) {
+      result.skipped++;
+      continue;
+    }
+    if (dryRun) {
+      result.linked++;
+      continue;
+    }
+    await api.updateTransaction(out.id, { payee });
+    const [updated] = (await api.getTransactions(out.account, out.date, out.date)).filter((t) => t.id === out.id);
+    if (!updated?.transfer_id) {
+      result.skipped++;
+      continue;
+    }
+    await api.deleteTransaction(inn.id);
+    const fields = { imported_id: inn.imported_id, cleared: inn.cleared, notes: inn.notes };
+    // An on-budget half of a transfer from an off-budget account needs a
+    // category; keep one the user already chose.
+    if (inn.category && !accounts.get(inn.account)?.offbudget && accounts.get(out.account)?.offbudget) {
+      fields.category = inn.category;
+    }
+    await api.updateTransaction(updated.transfer_id, fields);
+    result.linked++;
+  }
+  return result;
+}
+
+module.exports = { importAll, linkExistingTransfers, itemsFor, pairItems, roundUpId, PAIR_WINDOW_MS };

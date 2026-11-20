@@ -9,7 +9,7 @@ const config = require('../src/config');
 const { createApp } = require('../src/server');
 const { SyncInProgressError } = require('../src/sync');
 
-async function start(t, { settings = {}, runSync = async () => [], fileContents = {}, createAccounts } = {}) {
+async function start(t, { settings = {}, runSync = async () => [], fileContents = {}, createAccounts, linkTransfers } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'uas-'));
   const file = path.join(dir, 'config.json');
   fs.writeFileSync(file, JSON.stringify(fileContents));
@@ -27,6 +27,7 @@ async function start(t, { settings = {}, runSync = async () => [], fileContents 
       getAccount: async (token, id) => ({ id, attributes: { createdAt: '2099-01-01T00:00:00+11:00' } }),
     },
     ...(createAccounts && { createAccounts }),
+    ...(linkTransfers && { linkTransfers }),
   });
   const server = await new Promise((resolve) => {
     const s = app.listen(0, () => resolve(s));
@@ -196,4 +197,22 @@ test('staleLinks lists links whose Up account is gone', () => {
     { upId: 'up-gone', actualName: 'Old saver (closed)' },
     { upId: 'up-gone2', actualName: '(not in Actual)' },
   ]);
+});
+
+test('link existing transfers: preview, then confirm', async (t) => {
+  const calls = [];
+  const { base } = await start(t, {
+    linkTransfers: async (opts) => {
+      calls.push(opts.dryRun);
+      return { pairs: 5, linked: 3, alreadyLinked: 2, skipped: 0 };
+    },
+  });
+  const preview = await fetch(`${base}/transfers/preview`, { method: 'POST' });
+  assert.equal(preview.status, 200);
+  assert.match(await preview.text(), /Link 3 transfers/);
+  const noConfirm = await fetch(`${base}/transfers/link`, { method: 'POST', redirect: 'manual' });
+  assert.equal(noConfirm.status, 302);
+  const done = await fetch(`${base}/transfers/link`, { method: 'POST', body: new URLSearchParams({ confirm: '1' }) });
+  assert.match(await done.text(), /Linked 3 transfers/);
+  assert.deepEqual(calls, [true, false]);
 });
