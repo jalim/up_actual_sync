@@ -162,3 +162,25 @@ test('choosing "create new" on the link page creates and links that account', as
   assert.deepEqual(saved.linkedAccounts, { 'up-new': 'act-new' });
   assert.deepEqual(saved.importFrom, { 'up-new': '2099-01-01' });
 });
+
+test('off-budget choices are passed through from both create paths', async (t) => {
+  const calls = [];
+  const { base } = await start(t, {
+    createAccounts: async (opts) => {
+      calls.push(opts);
+      return opts.upAccountIds.map((id) => ({ upAccountId: id, actualAccountId: `act-${id}`, name: id,
+        offbudget: opts.offBudgetIds.includes(id), openingBalance: 0, openingDate: opts.startDate,
+        imported: 0, transfers: 0, warnings: [] }));
+    },
+  });
+  const bulk = new URLSearchParams([
+    ['upAccountIds', 'a'], ['upAccountIds', 'b'], ['offBudgetIds', 'b'], ['offBudgetIds', 'not-selected'], ['startDate', '2026-11-01'],
+  ]);
+  assert.equal((await fetch(`${base}/accounts/create`, { method: 'POST', body: bulk })).status, 200);
+  assert.deepEqual(calls[0].offBudgetIds, ['b']);
+
+  await fetch(`${base}/link`, { method: 'POST', body: new URLSearchParams({ account: 'c', accID: '__create_off_budget__' }) });
+  assert.deepEqual([calls[1].upAccountIds, calls[1].offBudgetIds], [['c'], ['c']]);
+  await fetch(`${base}/link`, { method: 'POST', body: new URLSearchParams({ account: 'd', accID: '__create__' }) });
+  assert.deepEqual(calls[2].offBudgetIds, []);
+});

@@ -151,3 +151,25 @@ test('createAccounts validates input before touching anything', async () => {
   await assert.rejects(create({ ...opts, upAccountIds: [] }), /No Up accounts/);
   await assert.rejects(create({ ...opts, token: '' }), /token/);
 });
+
+test('createAccounts honours offBudgetIds, including transfers into an off-budget saver', async () => {
+  const [out, inc] = h.upTransfer('up-sp', 'up-kid', 1500, '2026-11-07T10:00:00+11:00', '2026-11-07T10:00:01+11:00');
+  const up = fakeUp(
+    [
+      upAccount('up-sp', 20000, { displayName: 'Sp' }),
+      upAccount('up-kid', 6500, { displayName: 'Pocket money', accountType: 'SAVER' }),
+      upAccount('up-loan', -100, { displayName: 'Loan', accountType: 'HOME_LOAN' }),
+    ],
+    { 'up-sp': [out], 'up-kid': [inc] },
+  );
+  const [sp, kid, loan] = await create({ upAccountIds: ['up-sp', 'up-kid', 'up-loan'], offBudgetIds: ['up-kid'], upClient: up });
+  assert.equal(sp.offbudget, false);
+  assert.equal(kid.offbudget, true);
+  assert.equal(loan.offbudget, false, 'explicit list overrides the home-loan default');
+  const accounts = await budget.api.getAccounts();
+  assert.equal(accounts.find((a) => a.id === kid.actualAccountId).offbudget, true);
+  assert.equal(sp.transfers, 1);
+  assert.deepEqual([sp.warnings, kid.warnings], [[], []]);
+  assert.equal(await budget.api.getAccountBalance(kid.actualAccountId), 6500);
+  assert.equal(await budget.api.getAccountBalance(sp.actualAccountId), 20000);
+});

@@ -88,11 +88,11 @@ The tool can't create the budget file itself: API keys belong to one budget, so 
 2. Enter the key and the budget's sync ID on **Setup**.
 3. On **Link accounts**, under *Create Actual accounts from Up*, tick the Up accounts you want, choose an **Import history from** date (defaults to the 1st of this month), and select **Create and link**.
 
-When you open a new account in Up later, pick **➕ Create new Actual account** next to it on **Link accounts** and press **Save**. History starts from the 1st of this month, or from the day the Up account was opened if that's later. A brand-new account therefore starts at $0 with all its transactions.
+When you open a new account in Up later, pick **➕ Create new Actual account** (or **➕ Create new off-budget account**) next to it on **Link accounts** and press **Save**. History starts from the 1st of this month, or from the day the Up account was opened if that's later. A brand-new account therefore starts at $0 with all its transactions.
 
 For each selected account the tool:
 
-- creates an Actual account with the same name (2Up accounts get a "(2Up)" suffix, and duplicate names get a number); home loans are created off-budget
+- creates an Actual account with the same name (2Up accounts get a "(2Up)" suffix, and duplicate names get a number), on- or off-budget as you choose. Tick **Off budget** for money that isn't yours to budget, such as a child's pocket-money saver. Home loans are ticked by default. Actual can't switch an account between on- and off-budget later.
 - imports every Up transaction from the start date
 - adds a *Starting Balance* on the start date, set so that the Actual balance equals the current Up balance
 - checks the resulting Actual balance against Up and shows a warning if they differ

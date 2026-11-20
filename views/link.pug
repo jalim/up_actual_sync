@@ -14,18 +14,31 @@ block content
           | Creates a new Actual account for each selected Up account, imports every transaction from the start date,
           | and sets an opening balance so the Actual balance matches Up today.
         form(method='POST' action='/accounts/create')
-          each up in unlinked
-            .form-check
-              input.form-check-input(type='checkbox' name='upAccountIds' value=up.id id='create-' + up.id checked)
-              label.form-check-label(for='create-' + up.id) #{up.displayName}
-                small.text-body-secondary  (#{up.accountType}#{up.ownershipType === 'JOINT' ? ', 2Up' : ''})
+          table.table.table-sm.align-middle.mb-2
+            thead
+              tr
+                th Create
+                th Up account
+                th.text-center Off budget
+            tbody
+              each up in unlinked
+                tr
+                  td
+                    input.form-check-input(type='checkbox' name='upAccountIds' value=up.id id='create-' + up.id checked)
+                  td
+                    label(for='create-' + up.id) #{up.displayName}
+                      small.text-body-secondary  (#{up.accountType}#{up.ownershipType === 'JOINT' ? ', 2Up' : ''})
+                  td.text-center
+                    input.form-check-input(type='checkbox' name='offBudgetIds' value=up.id aria-label='Off budget: ' + up.displayName checked=up.accountType === 'HOME_LOAN')
           .row.g-2.align-items-end.mt-2
             .col-sm-4
               label.form-label(for='startDate') Import history from
               input#startDate.form-control(type='date' name='startDate' required value=defaultStartDate)
             .col-sm-4
               button.btn.btn-primary(type='submit') Create and link
-          .form-text.mt-2 Home loan accounts are created off-budget.
+          .form-text.mt-2
+            | Off-budget accounts are tracked but not part of your budget, e.g. a child's pocket-money saver or a home loan.
+            | Actual can't switch an account between on- and off-budget later, so choose here.
 
   h2.h5 Existing links
   p Choose which Actual account each Up account syncs into, or pick #[em ➕ Create new Actual account] to create one with its history from the 1st of this month (or since the Up account was opened, if later).
@@ -39,6 +52,7 @@ block content
         select.form-select(name='accID' id='acc-' + up.id)
           option(value='') Not linked
           option(value=createNew) ➕ Create new Actual account
+          option(value=createNewOffBudget) ➕ Create new off-budget account
           each acc in actualAccounts
             option(value=acc.id selected=linkedAccounts[up.id] === acc.id)= acc.name
       .col-sm-2

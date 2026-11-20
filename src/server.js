@@ -9,8 +9,9 @@ const { withBudget } = require('./actual');
 const { SyncInProgressError } = require('./sync');
 const initialise = require('./initialise');
 
-// Sentinel value for the link page's "create new Actual account" option.
+// Sentinel values for the link page's "create new Actual account" options.
 const CREATE_NEW = '__create__';
+const CREATE_NEW_OFF_BUDGET = '__create_off_budget__';
 
 function safeEqual(a, b) {
   const ha = crypto.createHash('sha256').update(String(a)).digest();
@@ -167,10 +168,11 @@ function createApp({
       saved: req.query.saved === '1',
       defaultStartDate: initialise.defaultStartDate(),
       createNew: CREATE_NEW,
+      createNewOffBudget: CREATE_NEW_OFF_BUDGET,
     });
   });
 
-  async function createAndLink(res, upAccountIds, startDate) {
+  async function createAndLink(res, upAccountIds, startDate, offBudgetIds) {
     let created;
     try {
       created = await createAccounts({
@@ -178,6 +180,7 @@ function createApp({
         actual: config.getActual(store),
         dataDir: settings.dataDir,
         upAccountIds,
+        offBudgetIds,
         startDate,
       });
     } catch (err) {
@@ -197,7 +200,9 @@ function createApp({
 
   app.post('/accounts/create', async (req, res) => {
     const body = req.body || {};
-    await createAndLink(res, [].concat(body.upAccountIds || []), (body.startDate || '').trim());
+    const upAccountIds = [].concat(body.upAccountIds || []);
+    const offBudgetIds = [].concat(body.offBudgetIds || []).filter((id) => upAccountIds.includes(id));
+    await createAndLink(res, upAccountIds, (body.startDate || '').trim(), offBudgetIds);
   });
 
   app.post('/link', async (req, res) => {
@@ -205,9 +210,10 @@ function createApp({
     const upId = req.body?.account;
     const actualId = req.body?.accID;
     if (!upId) return res.status(400).send('Missing account');
-    if (actualId === CREATE_NEW) {
+    if (actualId === CREATE_NEW || actualId === CREATE_NEW_OFF_BUDGET) {
       const upAccount = await upClient.getAccount(config.getUpToken(store), upId);
-      return createAndLink(res, [upId], initialise.startDateFor(upAccount));
+      const offBudgetIds = actualId === CREATE_NEW_OFF_BUDGET ? [upId] : [];
+      return createAndLink(res, [upId], initialise.startDateFor(upAccount), offBudgetIds);
     }
     if (linked[upId] !== actualId) {
       // A start date only applies to the account this tool created.

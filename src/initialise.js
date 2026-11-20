@@ -105,6 +105,8 @@ function accountName(upAccount, taken) {
 /**
  * Create an Actual account for each Up account, with an opening balance
  * dated `startDate` and every Up transaction since then imported.
+ * Transfers between an on-budget and an off-budget account need a category
+ * on the on-budget side; Actual leaves them uncategorised for you to fill in.
  *
  * @returns {Promise<Array<{upAccountId, actualAccountId, name, openingBalance, imported}>>}
  */
@@ -113,6 +115,9 @@ async function createAccounts({
   actual,
   dataDir,
   upAccountIds,
+  // Up account ids to create off-budget (e.g. a child's pocket-money saver).
+  // When omitted, only home loans are off-budget.
+  offBudgetIds,
   startDate,
   upClient = upBank,
   openBudget = withBudget,
@@ -136,7 +141,9 @@ async function createAccounts({
     // Create every account first so transfers between them can be linked.
     for (const w of work) {
       w.name = accountName(w.upAccount, taken);
-      w.offbudget = w.upAccount.attributes.accountType === 'HOME_LOAN';
+      w.offbudget = offBudgetIds
+        ? offBudgetIds.includes(w.upAccountId)
+        : w.upAccount.attributes.accountType === 'HOME_LOAN';
       w.actualAccountId = await api.createAccount({ name: w.name, offbudget: w.offbudget }, w.openingBalance);
       w.openingDate = openingBalanceDate(startDate, w.openingBalance, w.transactions);
       if (w.openingBalance !== 0) {
