@@ -184,3 +184,16 @@ test('off-budget choices are passed through from both create paths', async (t) =
   await fetch(`${base}/link`, { method: 'POST', body: new URLSearchParams({ account: 'd', accID: '__create__' }) });
   assert.deepEqual(calls[2].offBudgetIds, []);
 });
+
+test('staleLinks lists links whose Up account is gone', () => {
+  const { staleLinks } = require('../src/server');
+  const stale = staleLinks(
+    { 'up-a': 'act-a', 'up-gone': 'act-g', 'up-gone2': 'act-missing', 'up-unlinked': '' },
+    [{ id: 'up-a' }, { id: 'up-unlinked' }],
+    [{ id: 'act-a', name: 'A' }, { id: 'act-g', name: 'Old saver', closed: true }],
+  );
+  assert.deepEqual(stale, [
+    { upId: 'up-gone', actualName: 'Old saver (closed)' },
+    { upId: 'up-gone2', actualName: '(not in Actual)' },
+  ]);
+});

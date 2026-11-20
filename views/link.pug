@@ -5,6 +5,19 @@ block content
   if saved
     .alert.alert-success Saved.
 
+  if staleLinks.length
+    .alert.alert-warning
+      h2.h6 No longer in Up
+      p.mb-2
+        | These links point to Up accounts that have been deleted, so they are skipped when syncing.
+        | Unlink them, then close the Actual account in Actual if you no longer need it.
+      each s in staleLinks
+        form.d-flex.align-items-center.gap-2.mb-1(method='POST' action='/link')
+          input(type='hidden' name='account' value=s.upId)
+          input(type='hidden' name='accID' value='')
+          span Actual account: #[strong= s.actualName]
+          button.btn.btn-sm.btn-outline-danger(type='submit') Unlink
+
   - const unlinked = upAccounts.filter((u) => !linkedAccounts[u.id])
   if unlinked.length
     .card.mb-4

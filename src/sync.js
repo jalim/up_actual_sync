@@ -1,6 +1,7 @@
 'use strict';
 
 const upBank = require('./upBank');
+const { UpApiError } = upBank;
 const { withBudget } = require('./actual');
 const { mapTransaction } = require('./mapping');
 const importer = require('./importer');
@@ -66,18 +67,41 @@ async function run({
     const fetched = [];
     for (const [upAccountId, actualAccountId] of links) {
       const from = importFrom[upAccountId] || '';
-      const txns = (await upClient.getTransactions(token, upAccountId, since)).filter((t) => localDate(t) >= from);
-      fetched.push({ upAccountId, actualAccountId, txns });
+      let txns;
+      try {
+        txns = await upClient.getTransactions(token, upAccountId, since);
+      } catch (err) {
+        // A deleted Up account (e.g. a closed saver) must not block the rest.
+        if (err instanceof UpApiError && err.status === 404) {
+          console.warn(`Up account ${upAccountId} no longer exists; skipping. Unlink it on the Link accounts page.`);
+          fetched.push({ upAccountId, actualAccountId, txns: [], goneFromUp: true });
+          continue;
+        }
+        throw err;
+      }
+      fetched.push({ upAccountId, actualAccountId, txns: txns.filter((t) => localDate(t) >= from) });
     }
 
     const results = await openBudget(actual, dataDir, async (api) => {
       const accounts = await api.getAccounts();
       const known = new Map(accounts.map((a) => [a.id, a]));
-      const entries = fetched.filter((f) => known.has(f.actualAccountId));
+      const entries = fetched.filter((f) => known.has(f.actualAccountId) && !f.goneFromUp);
       const stats = await importer.importAll(api, entries, { settleMs, now });
       await api.sync();
       return fetched.map((f) => {
         const account = known.get(f.actualAccountId);
+        if (f.goneFromUp) {
+          return {
+            upAccountId: f.upAccountId,
+            actualAccountId: f.actualAccountId,
+            name: account?.name || '(missing)',
+            added: 0,
+            updated: 0,
+            transfers: 0,
+            deferred: 0,
+            errors: ['Up account no longer exists; unlink it on the Link accounts page'],
+          };
+        }
         if (!account) {
           console.warn(`Linked Actual account ${f.actualAccountId} not found; skipping Up account ${f.upAccountId}`);
           return {

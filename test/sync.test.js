@@ -124,3 +124,35 @@ test("run never imports transactions before an account's importFrom date", async
   );
   assert.deepEqual((await txnsIn(budget.api, acct)).map((t) => t.imported_id), ['new']);
 });
+
+test('a deleted Up account is reported but does not stop the other accounts syncing', async () => {
+  const { UpApiError } = require('../src/upBank');
+  const ok = await budget.api.createAccount({ name: 'Still here' }, 0);
+  const gone = await budget.api.createAccount({ name: 'Old saver' }, 0);
+  const results = await sync.run(
+    args({
+      linkedAccounts: { 'up-ok': ok, 'up-gone': gone },
+      upClient: {
+        getTransactions: async (token, id) => {
+          if (id === 'up-gone') throw new UpApiError('Up API 404: The requested account does not exist.', 404);
+          return [upTxn({ amount: -900 })];
+        },
+      },
+    }),
+  );
+  assert.equal(await budget.api.getAccountBalance(ok), -900);
+  const r = results.find((x) => x.upAccountId === 'up-gone');
+  assert.equal(r.name, 'Old saver');
+  assert.match(r.errors[0], /no longer exists/);
+});
+
+test('other Up errors still fail the sync', async () => {
+  const { UpApiError } = require('../src/upBank');
+  await assert.rejects(
+    sync.run(args({
+      linkedAccounts: { 'up-1': 'x' },
+      upClient: { getTransactions: async () => { throw new UpApiError('Up API 500', 500); } },
+    })),
+    /500/,
+  );
+});

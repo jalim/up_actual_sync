@@ -19,6 +19,17 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(ha, hb);
 }
 
+/** Links whose Up account no longer exists (e.g. a deleted saver). */
+function staleLinks(linkedAccounts, upAccounts, actualAccounts) {
+  const upIds = new Set(upAccounts.map((a) => a.id));
+  return Object.entries(linkedAccounts)
+    .filter(([upId, actualId]) => actualId && !upIds.has(upId))
+    .map(([upId, actualId]) => {
+      const acc = actualAccounts.find((a) => a.id === actualId);
+      return { upId, actualName: acc ? `${acc.name}${acc.closed ? ' (closed)' : ''}` : '(not in Actual)' };
+    });
+}
+
 function basicAuth(username, password) {
   return (req, res, next) => {
     const header = req.headers.authorization || '';
@@ -165,6 +176,7 @@ function createApp({
         .filter((a) => !a.closed)
         .sort((a, b) => a.name.localeCompare(b.name)),
       linkedAccounts: config.getLinkedAccounts(store),
+      staleLinks: staleLinks(config.getLinkedAccounts(store), upAccounts, actualAccounts),
       saved: req.query.saved === '1',
       defaultStartDate: initialise.defaultStartDate(),
       createNew: CREATE_NEW,
@@ -250,4 +262,4 @@ function createApp({
   return app;
 }
 
-module.exports = { createApp, basicAuth, sameOrigin };
+module.exports = { createApp, basicAuth, sameOrigin, staleLinks };
