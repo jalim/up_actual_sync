@@ -200,3 +200,42 @@ test('historical statement balance checks exclude newer transactions already in 
   assert.equal(result.accounts[0].balanceMatches, true);
   assert.equal(await budget.api.getAccountBalance(id), 15000);
 });
+
+test('linking an existing account with history only imports from the chosen date, on every later upload', async () => {
+  const id = await budget.api.createAccount({ name: 'Existing P&N with history' }, 0);
+  await budget.api.addTransactions(id, [{ date: '2026-10-05', amount: 2000, payee_name: 'Entered by hand' }]);
+  const s = create({ account: 'existing-history', balance: '50.00', transactions: [
+    { amount: '20.00', date: '20261005', memo: 'Credit Ref#701' },
+    { amount: '30.00', date: '20261012', memo: 'Credit Ref#702' },
+  ] });
+  const choices = choicesFor([s]);
+  Object.assign(choices[0], { actualAccountId: id, importFrom: '2026-10-06' });
+  const { result, mappings } = await run([s], {}, choices);
+  assert.equal(result.accounts[0].added, 1);
+  assert.equal(result.accounts[0].beforeImportFrom, 1);
+  assert.equal(result.accounts[0].balanceMatches, true);
+  assert.equal(mappings[s.key].importFrom, '2026-10-06');
+  // A later, overlapping export: the saved date still applies, even if the
+  // browser sends no date for an already-linked account.
+  const later = create({ account: 'existing-history', end: '20261120', balance: '60.00', transactions: [
+    { amount: '20.00', date: '20261005', memo: 'Credit Ref#701' },
+    { amount: '30.00', date: '20261012', memo: 'Credit Ref#702' },
+    { amount: '10.00', date: '20261115', memo: 'Credit Ref#703' },
+  ] });
+  const again = await run([later], mappings, [{ ...choices[0], importFrom: '' }]);
+  assert.deepEqual([again.result.accounts[0].added, again.result.accounts[0].duplicates, again.result.accounts[0].beforeImportFrom], [1, 1, 1]);
+  assert.equal(await budget.api.getAccountBalance(id), 6000);
+});
+
+test('a statement linked to a deleted account can be linked again', async () => {
+  const s = create({ account: 'relink-after-delete', transactions: [{ amount: '10.00', memo: 'Credit Ref#801' }] });
+  const first = await run([s]);
+  const old = first.mappings[s.key].actualAccountId;
+  await budget.api.deleteAccount(old);
+  const choices = choicesFor([s]);
+  const { result, mappings } = await run([s], first.mappings, choices);
+  const id = mappings[s.key].actualAccountId;
+  assert.notEqual(id, old);
+  assert.equal(result.accounts[0].added, 1);
+  assert.equal(await budget.api.getAccountBalance(id), 20000);
+});
