@@ -239,3 +239,24 @@ test('a statement linked to a deleted account can be linked again', async () => 
   assert.equal(result.accounts[0].added, 1);
   assert.equal(await budget.api.getAccountBalance(id), 20000);
 });
+
+test('suggests an existing account by account number in its name or notes, only when unique', () => {
+  const { suggestAccounts } = require('../src/ofxImport');
+  const st = (key, accountId) => ({ key, accountId });
+  const accounts = [
+    { id: 'notes', name: 'Bills' }, { id: 'name4', name: 'P&N Account 5678' },
+    { id: 'closed', name: 'Old 11112222', closed: true }, { id: 'up', name: 'Spending 33334444' },
+    { id: 'dupA', name: 'Joint 9999' }, { id: 'dupB', name: 'Offset 9999' },
+  ];
+  const notes = { notes: 'BSB 123-456, acct 1234 1234' };
+  const got = suggestAccounts([st('a', '12341234'), st('b', '00005678'), st('c', '11112222'),
+    st('d', '33334444'), st('e', '00009999'), st('f', '77777777')], accounts, notes, new Set(['up']));
+  assert.deepEqual(Object.fromEntries(got), {
+    a: { id: 'notes', reason: 'account number' },
+    b: { id: 'name4', reason: 'last four digits of the account number' },
+  });
+  // A longer number containing the account number is not a match.
+  assert.equal(suggestAccounts([st('a', '12341234')], [{ id: 'x', name: 'Card 9123412340' }], {}, new Set()).size, 0);
+  // Two statements matching the same account: suggest neither.
+  assert.equal(suggestAccounts([st('a', '10005678'), st('b', '20005678')], accounts, {}, new Set()).size, 0);
+});

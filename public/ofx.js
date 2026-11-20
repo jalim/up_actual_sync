@@ -142,7 +142,7 @@ function statementCard(s) {
     }));
     refreshButton();
   };
-  s.target.addEventListener('change', () => {
+  const applyTarget = () => {
     const a = preview.accounts.find((x) => x.id === s.target.value);
     if (a) {
       s.nameInput.value = a.name;
@@ -150,9 +150,18 @@ function statementCard(s) {
       // Default to the day after the account's newest entry to avoid duplicating history.
       s.fromInput.value = a.latest ? addDays(a.latest, 1) : '';
     }
+  };
+  s.target.addEventListener('change', () => {
+    applyTarget();
     refresh();
   });
   s.fromInput.addEventListener('input', refresh);
+  const suggested = !linked && preview.accounts.find((a) => a.id === s.suggestion?.id);
+  if (suggested) {
+    s.target.value = suggested.id;
+    applyTarget();
+    s.target.closest('label').after(element('p', `Matched to ${suggested.name} by the ${s.suggestion.reason}. Choose another account if that's wrong.`, 'form-text mt-n2 mb-3'));
+  }
 
   const transferSettings = linked ? element('details', undefined, 'mb-3') : card;
   if (linked) transferSettings.append(element('summary', 'Transfer settings'));

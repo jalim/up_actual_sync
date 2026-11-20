@@ -43,6 +43,7 @@ Open **Import OFX** in the web UI, select your P&N exports, then choose **Previe
 
 Statements you've imported before are recognised automatically. The preview shows how many transactions are new and how many are already in Actual, and the import adds only the new ones. For routine top-ups, just upload the latest export, check the closing balance and import.
 
+- For a statement that isn't linked yet, the preview preselects the matching Actual account when it can. It looks for the full account number in an account's name or notes (spaces and dashes are fine, e.g. `1234 5678`), then for the last four digits in an account's name. Only a unique match is preselected, never an account already linked elsewhere, and you can change it before importing.
 - To add P&N transactions to an Actual account that already has history entered some other way, select that account and set **Import transactions from**. It defaults to the day after the account's newest transaction. Earlier statement rows are left out, and the date is saved with the link so later overlapping exports don't re-add them.
 - If a linked Actual account is closed or deleted, the preview asks you to choose another account or create a new one.
 
