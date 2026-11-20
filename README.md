@@ -35,6 +35,8 @@ Then open `http://localhost:3000`:
 
 The container runs as uid 1000 (`node`), so the mounted config directory must be writable by that user (`sudo chown 1000:1000 ./config`).
 
+The budget is cached in `/home/node/app/budgets` (about 15 MB for a typical budget), so each sync only pulls recent changes. Add `-v ./budgets:/home/node/app/budgets` (also writable by uid 1000) to keep the cache across container restarts. Without it, the first sync after a restart downloads the whole budget again. In Kubernetes an `emptyDir` is fine.
+
 ## P&N OFX imports
 
 Open **Import OFX** in the web UI, select your P&N exports, then choose **Preview files**. You can upload several accounts and overlapping exports together. Nothing changes in Actual until you choose **Create accounts and import**.

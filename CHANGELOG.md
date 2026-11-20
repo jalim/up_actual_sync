@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0
+
+### Changed
+
+- **The budget is cached on disk between sessions.** Syncs and page loads open the local copy and pull only the changes since last time, instead of downloading the whole budget every time. Against a typical budget, opening went from several seconds to well under one. The cache (about 15 MB) lives in `budgets/`; mount it as a volume to keep it across container restarts.
+- If the cached copy can't be brought up to date (for example the budget was reset on the server), a fresh copy is downloaded automatically. Network, authentication and encryption-key errors are reported as before and don't trigger a re-download.
+- Replaces 1.0.1's per-session folders. Old folders are cleaned up automatically once they're 10 minutes old. Folders are still never deleted while Actual may be writing to them.
+
 ## 1.0.1
 
 ### Fixed
