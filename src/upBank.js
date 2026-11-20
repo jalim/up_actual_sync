@@ -65,6 +65,11 @@ async function getAccount(token, upAccountId, { fetchImpl = fetch } = {}) {
   return json.data;
 }
 
+async function getCategories(token, { fetchImpl = fetch } = {}) {
+  const json = await request(token, `${BASE_URL}/categories`, fetchImpl);
+  return json.data || [];
+}
+
 async function validate(token, { fetchImpl = fetch } = {}) {
   if (!token) return false;
   try {
@@ -76,4 +81,4 @@ async function validate(token, { fetchImpl = fetch } = {}) {
   }
 }
 
-module.exports = { BASE_URL, UpApiError, getTransactions, getAccounts, getAccount, validate };
+module.exports = { BASE_URL, UpApiError, getTransactions, getAccounts, getAccount, getCategories, validate };

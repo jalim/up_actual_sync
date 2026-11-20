@@ -42,3 +42,14 @@ test('settings parses string env-style values', (t) => {
   assert.equal(s.syncDays, 14);
   assert.equal(s.port, 8080);
 });
+
+test('category settings default off and parse fromUp', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'uas-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const empty = path.join(dir, 'a.json');
+  fs.writeFileSync(empty, '{}');
+  assert.deepEqual(config.getCategorySettings(config.load(empty)), { fromUp: false, transfers: {} });
+  const set = path.join(dir, 'b.json');
+  fs.writeFileSync(set, JSON.stringify({ categories: { fromUp: 'true', transfers: { acc: 'Contributions' } } }));
+  assert.deepEqual(config.getCategorySettings(config.load(set)), { fromUp: true, transfers: { acc: 'Contributions' } });
+});

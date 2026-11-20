@@ -40,6 +40,7 @@ function itemsFor({ upAccountId, actualAccountId, txns }) {
       actualAccountId,
       at,
       counterpartUp: t.relationships?.transferAccount?.data?.id || null,
+      upCategory: t.relationships?.category?.data?.id || null,
       isRoundUpCredit: a.transactionType === ROUND_UP,
       txn: mapTransaction(t, actualAccountId),
     });
@@ -96,6 +97,17 @@ function pairItems(items) {
   return { pairs, single: items.filter((i) => !paired.has(i)) };
 }
 
+/**
+ * Category for `accountId`'s half of a transfer with `otherId`: only when
+ * money crosses the budget boundary (this side on-budget, other off-budget)
+ * and a category is configured for the off-budget account.
+ */
+function transferCategory(categories, offBudget, accountId, otherId) {
+  if (offBudget.has(accountId) || !offBudget.has(otherId)) return {};
+  const category = categories?.transfer?.get(otherId);
+  return category ? { category } : {};
+}
+
 /** Could this item still be waiting for its other half to appear in Up? */
 function awaitingCounterpart(item, linkedUpIds) {
   if (item.isRoundUpDebit || item.isRoundUpCredit) return true;
@@ -129,9 +141,14 @@ async function existingImportedIds(api, items) {
  * @param {object} [opts]
  * @param {number} [opts.settleMs] - defer unpaired transfer-like items younger than this
  * @param {number} [opts.now]
+ * @param {{byUp: Map, transfer: Map}} [opts.categories] - from categories.resolveCategories
  * @returns {Promise<Map<actualAccountId, {added, updated, transfers, deferred, errors}>>}
  */
-async function importAll(api, entries, { settleMs = DEFAULT_SETTLE_MS, now = Date.now() } = {}) {
+async function importAll(
+  api,
+  entries,
+  { settleMs = DEFAULT_SETTLE_MS, now = Date.now(), categories = { byUp: new Map(), transfer: new Map() } } = {},
+) {
   const items = entries.flatMap(itemsFor);
   const linkedUpIds = new Set(entries.map((e) => e.upAccountId));
   const { pairs, single } = pairItems(items);
@@ -141,10 +158,13 @@ async function importAll(api, entries, { settleMs = DEFAULT_SETTLE_MS, now = Dat
   const stats = new Map(
     entries.map((e) => [e.actualAccountId, { added: 0, updated: 0, transfers: 0, deferred: 0, errors: [] }]),
   );
+  const offBudget = new Set((await api.getAccounts()).filter((a) => a.offbudget).map((a) => a.id));
   const plain = new Map(); // actualAccountId -> txns to importTransactions
   const queuePlain = (item) => {
     if (!plain.has(item.actualAccountId)) plain.set(item.actualAccountId, []);
-    plain.get(item.actualAccountId).push(item.txn);
+    // Category only applies to new transactions; Actual keeps any existing one.
+    const category = offBudget.has(item.actualAccountId) ? null : categories.byUp.get(item.upCategory);
+    plain.get(item.actualAccountId).push(category ? { ...item.txn, category } : item.txn);
   };
 
   const transferPayee = new Map(
@@ -175,7 +195,10 @@ async function importAll(api, entries, { settleMs = DEFAULT_SETTLE_MS, now = Dat
         imported_id: inc.txn.imported_id,
         cleared: inc.txn.cleared,
         notes: inc.txn.notes,
+        ...transferCategory(categories, offBudget, inc.actualAccountId, out.actualAccountId),
       });
+      const outCategory = transferCategory(categories, offBudget, out.actualAccountId, inc.actualAccountId);
+      if (outCategory.category) await api.updateTransaction(created.id, outCategory);
     }
     stats.get(out.actualAccountId).added++;
     stats.get(out.actualAccountId).transfers++;
@@ -214,7 +237,7 @@ async function importAll(api, entries, { settleMs = DEFAULT_SETTLE_MS, now = Dat
  *
  * @returns {Promise<{pairs, linked, alreadyLinked, skipped}>}
  */
-async function linkExistingTransfers(api, entries, { dryRun = false } = {}) {
+async function linkExistingTransfers(api, entries, { dryRun = false, categories } = {}) {
   const items = entries.flatMap(itemsFor);
   const { pairs } = pairItems(items);
   const result = { pairs: pairs.length, linked: 0, alreadyLinked: 0, skipped: 0 };
@@ -261,7 +284,13 @@ async function linkExistingTransfers(api, entries, { dryRun = false } = {}) {
     if (inn.category && !accounts.get(inn.account)?.offbudget && accounts.get(out.account)?.offbudget) {
       fields.category = inn.category;
     }
+    const offBudget = new Set([...accounts.values()].filter((a) => a.offbudget).map((a) => a.id));
+    if (!fields.category) Object.assign(fields, transferCategory(categories, offBudget, inn.account, out.account));
     await api.updateTransaction(updated.transfer_id, fields);
+    if (!updated.category) {
+      const outCategory = transferCategory(categories, offBudget, out.account, inn.account);
+      if (outCategory.category) await api.updateTransaction(out.id, outCategory);
+    }
     result.linked++;
   }
   return result;

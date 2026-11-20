@@ -5,6 +5,7 @@ const { UpApiError } = upBank;
 const { withBudget } = require('./actual');
 const { mapTransaction } = require('./mapping');
 const importer = require('./importer');
+const categories = require('./categories');
 
 class SyncInProgressError extends Error {
   constructor() {
@@ -42,6 +43,7 @@ async function run({
   actual,
   linkedAccounts,
   importFrom = {},
+  categorySettings,
   dataDir,
   syncDays,
   upClient = upBank,
@@ -82,11 +84,14 @@ async function run({
       fetched.push({ upAccountId, actualAccountId, txns: txns.filter((t) => localDate(t) >= from) });
     }
 
+    const upCategories = await categories.fetchUpCategories(upClient, token, categorySettings);
+
     const results = await openBudget(actual, dataDir, async (api) => {
       const accounts = await api.getAccounts();
       const known = new Map(accounts.map((a) => [a.id, a]));
       const entries = fetched.filter((f) => known.has(f.actualAccountId) && !f.goneFromUp);
-      const stats = await importer.importAll(api, entries, { settleMs, now });
+      const resolved = await categories.forEntries(api, entries, upCategories, categorySettings);
+      const stats = await importer.importAll(api, entries, { settleMs, now, categories: resolved });
       await api.sync();
       return fetched.map((f) => {
         const account = known.get(f.actualAccountId);

@@ -194,6 +194,7 @@ function createApp({
         actual: config.getActual(store),
         linkedAccounts: config.getLinkedAccounts(store),
         importFrom: config.getImportFrom(store),
+        categorySettings: config.getCategorySettings(store),
         dataDir: settings.dataDir,
         dryRun,
       });
@@ -219,6 +220,7 @@ function createApp({
         dataDir: settings.dataDir,
         upAccountIds,
         offBudgetIds,
+        categorySettings: config.getCategorySettings(store),
         startDate,
       });
     } catch (err) {

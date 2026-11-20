@@ -94,6 +94,12 @@ function getImportFrom(store) {
   return { ...(store.get('importFrom') || {}) };
 }
 
+/** Category settings; see src/categories.js. */
+function getCategorySettings(store) {
+  const c = store.get('categories') || {};
+  return { fromUp: parseBool(c.fromUp), transfers: { ...(c.transfers || {}) } };
+}
+
 function save(store) {
   return new Promise((resolve, reject) => {
     store.save((err) => (err ? reject(err) : resolve()));
@@ -110,5 +116,6 @@ module.exports = {
   getActual,
   getLinkedAccounts,
   getImportFrom,
+  getCategorySettings,
   save,
 };

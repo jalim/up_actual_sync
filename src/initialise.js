@@ -3,6 +3,7 @@
 const upBank = require('./upBank');
 const { withBudget } = require('./actual');
 const importer = require('./importer');
+const categories = require('./categories');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const SNAPSHOT_ATTEMPTS = 3;
@@ -118,6 +119,7 @@ async function createAccounts({
   // Up account ids to create off-budget (e.g. a child's pocket-money saver).
   // When omitted, only home loans are off-budget.
   offBudgetIds,
+  categorySettings,
   startDate,
   upClient = upBank,
   openBudget = withBudget,
@@ -128,6 +130,7 @@ async function createAccounts({
   if (startDate > today) throw new Error('Start date cannot be in the future');
   if (!upAccountIds?.length) throw new Error('No Up accounts selected');
 
+  const upCategories = await categories.fetchUpCategories(upClient, token, categorySettings);
   // All Up reads happen before the budget is opened.
   const work = [];
   for (const upAccountId of upAccountIds) {
@@ -156,11 +159,9 @@ async function createAccounts({
     // History import: no settle delay, everything Up has is final enough.
     // Transfers to accounts linked earlier come in as plain transactions,
     // since the other side is already in Actual that way.
-    const stats = await importer.importAll(
-      api,
-      work.map((w) => ({ upAccountId: w.upAccountId, actualAccountId: w.actualAccountId, txns: w.upTxns })),
-      { settleMs: 0 },
-    );
+    const entries = work.map((w) => ({ upAccountId: w.upAccountId, actualAccountId: w.actualAccountId, txns: w.upTxns }));
+    const resolved = await categories.forEntries(api, entries, upCategories, categorySettings);
+    const stats = await importer.importAll(api, entries, { settleMs: 0, categories: resolved });
 
     const created = [];
     for (const w of work) {

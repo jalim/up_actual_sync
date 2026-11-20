@@ -118,6 +118,23 @@ To convert pairs that were imported as two ordinary transactions (by an older ve
 
 **Upgrading an existing budget:** older versions didn't import round-ups, so a spending account with round-ups enabled is short in Actual by every round-up made before this version. Correct it with a one-off balance adjustment in Actual (reconcile the account to the Up balance), or recreate the account using the tool.
 
+## Categories
+
+Off by default. Configure in the config file:
+
+```json
+"categories": {
+  "fromUp": true,
+  "transfers": {
+    "<off-budget Actual account id>": "Contributions",
+    "<kid's saver Actual account id>": "Pocket Money"
+  }
+}
+```
+
+- **`fromUp`** mirrors Up's categories. Up's parent categories become Actual category groups (Home, Personal, Good Life, Transport). Each category is created the first time it's used, and new on-budget transactions are categorised to match Up. Off-budget transactions are never categorised. A category you've already set in Actual is never overwritten.
+- **`transfers`** sets the category for the on-budget half of a transfer to or from the given off-budget account, e.g. money from your personal account into the family budget, or pocket money paid out to a child's saver. The categories are looked up by name and must already exist in Actual. Actual's rules don't run on transfers created through the API, so this setting is needed instead.
+
 ## Upgrading from 1.x
 
 - **Node 22+** is required (the Docker image now uses Node 24).
