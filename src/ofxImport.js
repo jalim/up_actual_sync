@@ -217,7 +217,9 @@ function validateChoices(statements, choices, accounts, categories, upIds, mappi
     if (id) targets.add(id);
     if (c.upAccountId && c.upAccountId !== '__any__' && !upIds.includes(c.upAccountId)) throw new Error('Choose a linked Up account');
     if (c.transferCategoryId && !categories.some((cat) => cat.id === c.transferCategoryId)) throw new Error('Unknown transfer category');
-    const closingBalance = money(String(c.closingBalance));
+    // A linked account's sign (P&N reports loans as positive) was settled when
+    // it was linked, so its closing balance comes straight from the statement.
+    const closingBalance = saved ? s.balance * (saved.balanceSign || 1) : money(String(c.closingBalance));
     if (!saved && !id && newNames.has(c.name.trim().toLowerCase())) {
       throw new Error('An account with that name already exists; select it instead');
     }

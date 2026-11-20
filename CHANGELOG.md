@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1
+
+### Changed
+
+- **OFX statements are matched to existing Actual accounts.** A statement that isn't linked yet preselects the Actual account whose name or notes contain its account number. Failing that, it uses the last four digits in an account name. Only unique matches are preselected, and you can change them.
+- **No balance to type for existing accounts.** The preview shows the account's balance in Actual on the statement date after the import, and whether it matches the statement. The sign (P&N reports loans as positive) is worked out automatically, and the closing balance field only appears when it can't be. Linked accounts take their closing balance from the statement.
+
 ## 1.2.0
 
 ### Changed

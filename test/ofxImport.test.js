@@ -260,3 +260,15 @@ test('suggests an existing account by account number in its name or notes, only 
   // Two statements matching the same account: suggest neither.
   assert.equal(suggestAccounts([st('a', '10005678'), st('b', '20005678')], accounts, {}, new Set()).size, 0);
 });
+
+test('a linked account takes its closing balance from the statement and saved sign, not the form', async () => {
+  const loan = create({ account: 'linked-loan-sign', balance: '1000.00', transactions: [{ amount: '-50.00', memo: 'Loan Redraw Ref#901' }] });
+  const first = await run([loan]);
+  assert.equal(first.mappings[loan.key].balanceSign, -1);
+  const next = create({ account: 'linked-loan-sign', start: '20261101', end: '20261130', balance: '1020.00',
+    transactions: [{ amount: '-20.00', date: '20261110', memo: 'Loan Redraw Ref#902' }] });
+  const { result, mappings } = await run([next], first.mappings, [{ ...first.choices[0], closingBalance: 'not a number' }]);
+  assert.equal(result.accounts[0].closingBalance, -102000);
+  assert.equal(result.accounts[0].balanceMatches, true);
+  assert.equal(mappings[loan.key].balanceSign, -1);
+});
