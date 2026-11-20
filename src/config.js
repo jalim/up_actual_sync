@@ -94,6 +94,21 @@ function getImportFrom(store) {
   return { ...(store.get('importFrom') || {}) };
 }
 
+// Keep file-account links separate for each server/budget combination.
+function ofxScope(store) {
+  const a = getActual(store);
+  return require('node:crypto').createHash('sha256').update(JSON.stringify([a.serverUrl, a.budgetId])).digest('hex');
+}
+
+function getOfxAccounts(store) {
+  return structuredClone(store.get(`ofxAccounts:${ofxScope(store)}`) || {});
+}
+
+function setOfxAccounts(store, mappings) {
+  store.set(`ofxAccounts:${ofxScope(store)}`, mappings);
+  return save(store);
+}
+
 /** Category settings; see src/categories.js. */
 function getCategorySettings(store) {
   const c = store.get('categories') || {};
@@ -117,5 +132,8 @@ module.exports = {
   getLinkedAccounts,
   getImportFrom,
   getCategorySettings,
+  getOfxAccounts,
+  setOfxAccounts,
+  ofxScope,
   save,
 };

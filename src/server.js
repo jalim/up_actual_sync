@@ -9,6 +9,8 @@ const { withBudget } = require('./actual');
 const { SyncInProgressError } = require('./sync');
 const initialise = require('./initialise');
 const repair = require('./repair');
+const ofx = require('./ofx');
+const ofxImport = require('./ofxImport');
 
 // Sentinel values for the link page's "create new Actual account" options.
 const CREATE_NEW = '__create__';
@@ -79,6 +81,7 @@ function createApp({
   upClient = upBank,
   createAccounts = initialise.createAccounts,
   linkTransfers = repair.linkExistingTransfers,
+  openBudget = withBudget,
 }) {
   const app = express();
   app.disable('x-powered-by');
@@ -93,9 +96,77 @@ function createApp({
 
   app.use(express.urlencoded({ extended: false }));
   app.use(sameOrigin);
+  app.use(express.json({ limit: '12mb' }));
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
   app.get('/healthz', (req, res) => res.json({ ok: true }));
+
+  // Parsed uploads stay in memory for 30 minutes, never in the config or on disk.
+  const previews = new Map();
+  let importingOfx = false;
+  app.get('/ofx', (req, res) => res.render('ofx'));
+  app.post('/ofx/preview', async (req, res) => {
+    try {
+      const files = req.body?.files;
+      if (!Array.isArray(files) || !files.length || files.length > 10) throw new Error('Select between 1 and 10 OFX files');
+      let totalBytes = 0;
+      const statements = ofx.combine(files.flatMap((f) => {
+        if (typeof f.content !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(f.content)) throw new Error('Invalid file upload');
+        const data = Buffer.from(f.content, 'base64');
+        if (data.length > 5 * 1024 * 1024) throw new Error('Each OFX file must be smaller than 5 MB');
+        totalBytes += data.length;
+        if (totalBytes > 8 * 1024 * 1024) throw new Error('OFX files must be smaller than 8 MB in total');
+        return ofx.parse(data);
+      }));
+      const details = await openBudget(config.getActual(store), settings.dataDir, async (api) => ({
+        accounts: await api.getAccounts(), categories: await api.getCategories(),
+      }));
+      const mappings = config.getOfxAccounts(store);
+      const token = crypto.randomBytes(24).toString('hex');
+      const discard = (key) => {
+        clearTimeout(previews.get(key)?.timer);
+        previews.delete(key);
+      };
+      for (const [key, p] of previews) if (p.expires < Date.now()) discard(key);
+      while (previews.size >= 10) discard(previews.keys().next().value);
+      const timer = setTimeout(() => previews.delete(token), 30 * 60000);
+      timer.unref();
+      previews.set(token, { statements, expires: Date.now() + 30 * 60000, scope: config.ofxScope(store), timer });
+      res.json({ token, accounts: details.accounts.filter((a) => !a.closed),
+        categories: details.categories.filter((c) => !c.hidden),
+        upAccountIds: Object.values(config.getLinkedAccounts(store)),
+        statements: statements.map((s) => ({ key: s.key, maskedAccount: `…${s.accountId.slice(-4)}`,
+          start: s.start, end: s.end, balanceDate: s.balanceDate,
+          closingBalance: mappings[s.key]?.balanceSign ? s.balance * mappings[s.key].balanceSign : s.suggestedBalance,
+          name: `P&N ${s.loan ? 'Home Loan' : 'Account'} ${s.accountId.slice(-4)}`, offbudget: s.loan,
+          skipped: s.skipped, transactions: s.transactions, saved: mappings[s.key] || null })),
+      });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+  app.post('/ofx/import', async (req, res) => {
+    if (importingOfx) return res.status(409).json({ error: 'An OFX import is already running' });
+    const preview = previews.get(req.body?.token);
+    if (!preview || preview.expires < Date.now() || preview.scope !== config.ofxScope(store)) {
+      return res.status(400).json({ error: 'Preview expired or budget changed; upload the files again' });
+    }
+    importingOfx = true;
+    try {
+      const result = await openBudget(config.getActual(store), settings.dataDir, (api) => ofxImport.importStatements(api, {
+        statements: preview.statements, choices: req.body.choices,
+        mappings: config.getOfxAccounts(store), upAccountIds: Object.values(config.getLinkedAccounts(store)),
+        saveMappings: (m) => config.setOfxAccounts(store, m),
+      }));
+      clearTimeout(preview.timer);
+      previews.delete(req.body.token);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: `${err.message}. Any completed accounts/imports are saved; retry the upload to continue.` });
+    } finally {
+      importingOfx = false;
+    }
+  });
 
   app.get('/', (req, res) => {
     res.render('index', {
@@ -283,6 +354,10 @@ function createApp({
   // Express 5 forwards rejected promises from async handlers here.
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
+    if (req.path.startsWith('/ofx/')) {
+      // Body-parser errors include the uploaded body; do not log bank data.
+      return res.status(err.status === 413 ? 413 : 400).json({ error: err.status === 413 ? 'Upload is too large (8 MB total file limit)' : 'Could not read this upload request' });
+    }
     console.error(err);
     res.status(500).render('error', { message: err.message });
   });

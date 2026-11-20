@@ -19,6 +19,7 @@ async function runSync() {
       linkedAccounts: config.getLinkedAccounts(store),
       importFrom: config.getImportFrom(store),
       categorySettings: config.getCategorySettings(store),
+      ofxAccounts: config.getOfxAccounts(store),
       dataDir: settings.dataDir,
       syncDays: settings.syncDays,
     });

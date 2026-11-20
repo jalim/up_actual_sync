@@ -6,6 +6,7 @@ const { withBudget } = require('./actual');
 const { mapTransaction } = require('./mapping');
 const importer = require('./importer');
 const categories = require('./categories');
+const { reconcileTransfers } = require('./ofxImport');
 
 class SyncInProgressError extends Error {
   constructor() {
@@ -42,6 +43,7 @@ async function run({
   token,
   actual,
   linkedAccounts,
+  ofxAccounts = {},
   importFrom = {},
   categorySettings,
   dataDir,
@@ -92,6 +94,7 @@ async function run({
       const entries = fetched.filter((f) => known.has(f.actualAccountId) && !f.goneFromUp);
       const resolved = await categories.forEntries(api, entries, upCategories, categorySettings);
       const stats = await importer.importAll(api, entries, { settleMs, now, categories: resolved });
+      await reconcileTransfers(api, ofxAccounts, links.map(([, id]) => id));
       await api.sync();
       return fetched.map((f) => {
         const account = known.get(f.actualAccountId);

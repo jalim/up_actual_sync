@@ -4,6 +4,7 @@ block content
   p.lead Sync transactions from Up Bank into Actual Budget.
   p #{linkedCount} linked account#{linkedCount === 1 ? '' : 's'}.
   button#sync.btn.btn-primary(type='button') Sync now
+  a.btn.btn-outline-primary.ms-2(href='/ofx') Import P&N OFX
   #status.mt-3(role='status' aria-live='polite')
     if lastSync
       if lastSync.ok

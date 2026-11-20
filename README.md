@@ -4,6 +4,7 @@ A small service that imports transactions from [Up Bank](https://up.com.au) into
 
 - Scheduled sync (hourly by default)
 - Web UI to configure credentials, link Up accounts to Actual accounts, and trigger a sync manually
+- Upload P&N OFX statements, create or select Actual accounts, and link matching transfers (including Up ↔ P&N)
 - Re-running is safe: transactions are de-duplicated by Up transaction ID, and held transactions are updated once they settle
 - Transfers between your Up accounts (including 2Up) and round-ups become proper Actual transfers
 
@@ -33,6 +34,24 @@ Then open `http://localhost:3000`:
 3. **Sync now**, or wait for the schedule.
 
 The container runs as uid 1000 (`node`), so the mounted config directory must be writable by that user (`sudo chown 1000:1000 ./config`).
+
+## P&N OFX imports
+
+Open **Import OFX** in the web UI, select your P&N exports, then choose **Preview files**. You can upload several accounts and overlapping exports together. Nothing changes in Actual until you choose **Create accounts and import**.
+
+- Review each account name, choose a new or existing Actual account, and check its budget status. Home loans are suggested as off-budget even when P&N labels them `SAVINGS`.
+- Check the signed closing balance. Money owed should be negative; P&N can report a loan balance as positive. A new account's opening balance is calculated from the closing balance less the exported transactions and dated before the statement period. Existing accounts retain their opening balance and budget status.
+- Choose the linked Up account for transfers. Clear, unique matches use opposite amounts within three days and a description identifying Up or P&N. P&N internal transfers use their shared bank reference. Matches are revisited after subsequent uploads and Up syncs, so the two sides can arrive separately.
+- If an Up transaction has already created a P&N transfer half, the importer attaches the OFX identity to that existing half. It does not create another transaction. If the transfer is created after the OFX import, its generated half is merged into the imported entry. Several possible matches are left for review; ambiguous existing transfer halves defer that OFX entry instead of adding a duplicate.
+- Transfers crossing the on-budget/off-budget boundary need a category on the on-budget side. You can select a category in the preview or categorise them later in Actual. Transfers within the budget need no category.
+
+P&N's OFX `FITID` values change between exports. This importer ignores them and derives IDs from the account, date, signed amount and bank reference (or description where there is no reference). Repeated identical entries retain their multiplicity. Changed descriptions on transactions without references may need manual review. Zero-dollar loan notices are skipped; interest and other financial transactions are retained.
+
+The result shows additions, duplicate entries, existing transfer matches, balance checks and transfers needing review. When bank descriptions do not identify Up/P&N, or a match is ambiguous, use Actual's **All accounts → select the two transactions → Make transfer**. Avoid creating a second counterpart when both entries already exist.
+
+Account links and opening-balance metadata are saved in the config file, scoped to the Actual server and budget. Keep that config volume when upgrading. Uploaded files are not saved to disk; previews are held in memory for up to 30 minutes and discarded after a successful import. Server restarts discard previews. Imports checkpoint completed work; after an error, re-upload the same files to continue. Deleting an imported entry in Actual and uploading it again will restore it.
+
+For the first import, include the oldest history you want to keep. Earlier exports can subsequently extend an account created by this tool by adjusting its opening balance. Use this upload flow consistently for P&N; files previously imported directly in Actual have different IDs and can duplicate transactions.
 
 ## Configuration
 
@@ -159,3 +178,5 @@ Code layout:
 - `src/actual.js`: opens/closes the Actual budget (serialized; the API is a singleton)
 - `src/sync.js`: maps Up transactions and imports them
 - `src/server.js`: Express routes
+- `src/ofx.js`: OFX parsing and stable P&N transaction identities
+- `src/ofxImport.js`: statement imports, opening balances and transfer matching

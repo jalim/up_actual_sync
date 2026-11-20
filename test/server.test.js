@@ -9,7 +9,7 @@ const config = require('../src/config');
 const { createApp } = require('../src/server');
 const { SyncInProgressError } = require('../src/sync');
 
-async function start(t, { settings = {}, runSync = async () => [], fileContents = {}, createAccounts, linkTransfers } = {}) {
+async function start(t, { settings = {}, runSync = async () => [], fileContents = {}, createAccounts, linkTransfers, openBudget } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'uas-'));
   const file = path.join(dir, 'config.json');
   fs.writeFileSync(file, JSON.stringify(fileContents));
@@ -28,6 +28,7 @@ async function start(t, { settings = {}, runSync = async () => [], fileContents 
     },
     ...(createAccounts && { createAccounts }),
     ...(linkTransfers && { linkTransfers }),
+    ...(openBudget && { openBudget }),
   });
   const server = await new Promise((resolve) => {
     const s = app.listen(0, () => resolve(s));
@@ -44,6 +45,50 @@ test('index and setup render', async (t) => {
   assert.equal((await fetch(`${base}/`)).status, 200);
   const setup = await fetch(`${base}/setup`);
   assert.equal(setup.status, 200);
+});
+
+test('OFX preview is read-only and import reuses the server-side statement', async (t) => {
+  const { statement } = require('./helpers/ofx');
+  // This route test uses a small API stub; real import/transfer behavior is
+  // exercised against Actual itself in ofxImport.test.js.
+  let created = 0;
+  const txns = [];
+  const api = {
+    getAccounts: async () => [], getCategories: async () => [], getPayees: async () => [],
+    createAccount: async () => { created++; return 'ofx-created'; },
+    addTransactions: async (account, rows) => { txns.push(...rows.map((r) => ({ ...r, account }))); },
+    getTransactions: async () => txns, getAccountBalance: async () => 20000, sync: async () => {},
+  };
+  const { base, file } = await start(t, { openBudget: async (_a, _d, fn) => fn(api) });
+  assert.equal((await fetch(`${base}/ofx`)).status, 200);
+  const post = (url, data) => fetch(base + url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  let res = await post('/ofx/preview', { files: [{ content: Buffer.from(statement({ transactions: [{ amount: '10.00', memo: '<script>alert(1)</script>' }] })).toString('base64') }] });
+  assert.equal(res.status, 400, 'tag-shaped memo is invalid scalar content');
+  res = await post('/ofx/preview', { files: [{ content: Buffer.from(statement({ transactions: [{ amount: '10.00', memo: 'Credit Ref#123' }] })).toString('base64') }] });
+  assert.equal(res.status, 200);
+  const preview = await res.json();
+  assert.equal(created, 0);
+  assert.equal(preview.statements[0].maskedAccount, '…ings');
+  assert.equal(preview.statements[0].accountId, undefined);
+  assert.equal((await post('/ofx/import', { token: 'unknown', choices: [] })).status, 400);
+  const choices = [{ key: preview.statements[0].key, name: 'P&N Test', offbudget: false, closingBalance: '200.00' }];
+  res = await post('/ofx/import', { token: preview.token, choices });
+  assert.equal(res.status, 200);
+  assert.equal(created, 1);
+  assert.equal((await res.json()).accounts[0].added, 1);
+  assert.equal((await post('/ofx/import', { token: preview.token, choices })).status, 400, 'successful previews cannot be replayed');
+  assert.match(fs.readFileSync(file, 'utf8'), /ofx-created/);
+});
+
+test('OFX routes reject cross-origin and malformed uploads before opening a budget', async (t) => {
+  let opened = 0;
+  const { base } = await start(t, { openBudget: async () => { opened++; } });
+  const post = (body, extra = {}) => fetch(`${base}/ofx/preview`, { method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...extra }, body: JSON.stringify(body) });
+  assert.equal((await post({ files: [] })).status, 400);
+  assert.equal((await post({ files: [{ content: Buffer.from('not ofx').toString('base64') }] })).status, 400);
+  assert.equal((await post({ files: [] }, { Origin: 'https://other.example' })).status, 403);
+  assert.equal(opened, 0);
 });
 
 test('setup page never echoes saved secrets', async (t) => {
