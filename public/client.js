@@ -1,14 +1,14 @@
 'use strict';
 
 const button = document.getElementById('sync');
-const status = document.getElementById('status');
+const statusEl = document.getElementById('status');
 
 function show(kind, text) {
-  status.replaceChildren();
+  statusEl.replaceChildren();
   const div = document.createElement('div');
   div.className = `alert alert-${kind}`;
   div.textContent = text;
-  status.append(div);
+  statusEl.append(div);
 }
 
 button?.addEventListener('click', async () => {
