@@ -156,3 +156,22 @@ test('other Up errors still fail the sync', async () => {
     /500/,
   );
 });
+
+test('a failure in OFX transfer matching does not fail the Up sync', async (t) => {
+  const ofxImport = require('../src/ofxImport');
+  t.mock.method(ofxImport, 'reconcileTransfers', async () => { throw new Error('boom'); });
+  t.mock.method(console, 'error', () => {});
+  // sync.js captured reconcileTransfers at require time; reload it to pick up the mock.
+  delete require.cache[require.resolve('../src/sync')];
+  const freshSync = require('../src/sync');
+  t.after(() => { delete require.cache[require.resolve('../src/sync')]; });
+  const acct = await budget.api.createAccount({ name: 'OFX-safe' }, 0);
+  const results = await freshSync.run(args({
+    linkedAccounts: { 'up-1': acct },
+    ofxAccounts: { k: { actualAccountId: acct, start: '2026-11-01' } },
+    upClient: fakeUp({ 'up-1': [upTxn({ amount: -321 })] }),
+  }));
+  assert.equal(await budget.api.getAccountBalance(acct), -321);
+  const warn = results.find((r) => r.name === 'P&N transfer matching');
+  assert.match(warn.errors[0], /OFX transfer matching failed: boom/);
+});

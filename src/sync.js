@@ -94,9 +94,17 @@ async function run({
       const entries = fetched.filter((f) => known.has(f.actualAccountId) && !f.goneFromUp);
       const resolved = await categories.forEntries(api, entries, upCategories, categorySettings);
       const stats = await importer.importAll(api, entries, { settleMs, now, categories: resolved });
-      await reconcileTransfers(api, ofxAccounts, links.map(([, id]) => id));
+      // OFX transfer matching is best-effort: a failure there must not stop the
+      // Up import from being pushed to the server.
+      let ofxWarning = null;
+      try {
+        await reconcileTransfers(api, ofxAccounts, links.map(([, id]) => id));
+      } catch (err) {
+        ofxWarning = `OFX transfer matching failed: ${err.message}`;
+        console.error(ofxWarning);
+      }
       await api.sync();
-      return fetched.map((f) => {
+      const perAccount = fetched.map((f) => {
         const account = known.get(f.actualAccountId);
         if (f.goneFromUp) {
           return {
@@ -125,6 +133,10 @@ async function run({
         }
         return { upAccountId: f.upAccountId, actualAccountId: f.actualAccountId, name: account.name, ...stats.get(f.actualAccountId) };
       });
+      if (ofxWarning) {
+        perAccount.push({ name: 'P&N transfer matching', added: 0, updated: 0, transfers: 0, deferred: 0, errors: [ofxWarning] });
+      }
+      return perAccount;
     });
 
     for (const r of results) {
