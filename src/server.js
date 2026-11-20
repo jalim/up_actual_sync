@@ -125,15 +125,28 @@ function createApp({
         const accounts = (await api.getAccounts()).filter((a) => !a.closed);
         const latest = {};
         const importedIds = {};
+        const notes = {};
+        const balances = {};
+        const balanceDates = [...new Set(statements.map((s) => s.balanceDate))];
         for (const a of accounts) {
+          // Balances on each statement date let the preview check the closing
+          // balance (and its sign) before anything is imported.
+          balances[a.id] = {};
+          for (const d of balanceDates) balances[a.id][d] = await api.getAccountBalance(a.id, new Date(`${d}T12:00:00`));
+          notes[a.id] = (await api.getNote(a.id))?.note || '';
           const rows = await api.getTransactions(a.id, '0001-01-01', '9999-12-31');
           latest[a.id] = rows.reduce((d, t) => (t.date > d ? t.date : d), '') || null;
           if (Object.values(mappings).some((m) => m.actualAccountId === a.id)) {
             importedIds[a.id] = new Set(rows.map((t) => t.imported_id).filter(Boolean));
           }
         }
-        return { accounts, latest, importedIds, categories: await api.getCategories() };
+        return { accounts, latest, importedIds, notes, balances, categories: await api.getCategories() };
       });
+      const upAccountIds = Object.values(config.getLinkedAccounts(store));
+      const taken = new Set([...upAccountIds, ...Object.keys(mappings)
+        .map((key) => ofxImport.activeMapping(mappings, key, details.accounts)?.actualAccountId).filter(Boolean)]);
+      const suggestions = ofxImport.suggestAccounts(
+        statements.filter((s) => !ofxImport.activeMapping(mappings, s.key, details.accounts)), details.accounts, details.notes, taken);
       const token = crypto.randomBytes(24).toString('hex');
       const discard = (key) => {
         clearTimeout(previews.get(key)?.timer);
@@ -144,17 +157,17 @@ function createApp({
       const timer = setTimeout(() => previews.delete(token), 30 * 60000);
       timer.unref();
       previews.set(token, { statements, expires: Date.now() + 30 * 60000, scope: config.ofxScope(store), timer });
-      res.json({ token, accounts: details.accounts.map((a) => ({ ...a, latest: details.latest[a.id] })),
+      res.json({ token, accounts: details.accounts.map((a) => ({ ...a, latest: details.latest[a.id], balances: details.balances[a.id] })),
         categories: details.categories.filter((c) => !c.hidden),
-        upAccountIds: Object.values(config.getLinkedAccounts(store)),
+        upAccountIds,
         statements: statements.map((s) => {
           const saved = ofxImport.activeMapping(mappings, s.key, details.accounts);
           const seen = saved ? details.importedIds[saved.actualAccountId] : new Set();
           return { key: s.key, maskedAccount: `…${s.accountId.slice(-4)}`,
-            start: s.start, end: s.end, balanceDate: s.balanceDate,
+            start: s.start, end: s.end, balanceDate: s.balanceDate, balance: s.balance,
             closingBalance: mappings[s.key]?.balanceSign ? s.balance * mappings[s.key].balanceSign : s.suggestedBalance,
             name: `P&N ${s.loan ? 'Home Loan' : 'Account'} ${s.accountId.slice(-4)}`, offbudget: s.loan,
-            skipped: s.skipped, saved, relink: !saved && !!mappings[s.key],
+            skipped: s.skipped, saved, relink: !saved && !!mappings[s.key], suggestion: suggestions.get(s.key) || null,
             transactions: s.transactions.map((t) => ({ ...t, imported: seen.has(t.imported_id) })) };
         }),
       });

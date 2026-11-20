@@ -55,7 +55,7 @@ test('OFX preview is read-only and import reuses the server-side statement', asy
   const txns = [];
   let accounts = [];
   const api = {
-    getAccounts: async () => accounts, getCategories: async () => [], getPayees: async () => [],
+    getAccounts: async () => accounts, getNote: async () => null, getCategories: async () => [], getPayees: async () => [],
     createAccount: async () => { created++; return 'ofx-created'; },
     addTransactions: async (account, rows) => { txns.push(...rows.map((r) => ({ ...r, account }))); },
     getTransactions: async () => txns, getAccountBalance: async () => 20000, sync: async () => {},

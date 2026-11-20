@@ -80,6 +80,13 @@ function counts(s) {
   return c;
 }
 
+/** What Actual's balance will be on the statement date once the new rows are added. */
+function expectedBalance(s) {
+  const account = preview.accounts.find((a) => a.id === s.target.value);
+  return (account?.balances?.[s.balanceDate] || 0) + s.transactions
+    .filter((t) => rowStatus(s, t) === 'New' && t.date <= s.balanceDate).reduce((sum, t) => sum + t.amount, 0);
+}
+
 function refreshButton() {
   // Cards still being built have no target yet; the caller refreshes once all exist.
   document.getElementById('ofx-import').textContent = preview.statements.some((s) => !s.saved && s.target && !s.target.value)
@@ -108,7 +115,10 @@ function statementCard(s) {
   const fromField = linked ? null : field(card, 'Import transactions from (earlier statement entries are assumed to be in Actual already; clear to import everything)', s.fromInput).parentElement;
   s.balanceInput = input(dollars(s.closingBalance), 'number');
   s.balanceInput.step = '0.01';
-  const balanceLabel = field(card, '', s.balanceInput).parentElement.firstChild;
+  const balanceField = field(card, '', s.balanceInput).parentElement;
+  const balanceLabel = balanceField.firstChild;
+  const balanceCheck = element('p');
+  card.append(balanceCheck);
   const details = element('details');
   const detailsSummary = element('summary');
   details.append(detailsSummary);
@@ -128,9 +138,25 @@ function statementCard(s) {
       budgetField.classList.toggle('d-none', existing);
       fromField.classList.toggle('d-none', !existing);
     }
+    // Existing accounts: work out what Actual will show after the import and
+    // use it to settle the statement's sign, so no balance needs typing.
+    const projected = existing ? expectedBalance(s) : null;
+    const sign = !existing ? 0 : linked ? (s.saved.balanceSign || 1)
+      : projected === s.balance ? 1 : projected === -s.balance ? -1 : 0;
+    if (sign) s.balanceInput.value = dollars(s.balance * sign);
+    balanceField.classList.toggle('d-none', !!sign);
     balanceLabel.textContent = existing
-      ? `Closing balance at ${s.balanceDate} (negative for debt; checked against Actual after import)`
+      ? `Closing balance at ${s.balanceDate} (negative for debt)`
       : `Closing balance at ${s.balanceDate} (negative for debt; sets the new account's opening balance)`;
+    balanceCheck.classList.toggle('d-none', !existing);
+    if (existing) {
+      const statement = Math.round(Number(s.balanceInput.value) * 100);
+      const ok = projected === statement;
+      balanceCheck.className = ok ? 'text-success' : 'text-warning-emphasis';
+      balanceCheck.textContent = `Balance in Actual on ${s.balanceDate} after import: $${dollars(projected)}` + (ok
+        ? ' — matches the statement.'
+        : ` — the statement says $${dollars(statement)} (Actual would be $${dollars(Math.abs(projected - statement))} ${projected > statement ? 'higher' : 'lower'}). Check the import start date, or reconcile in Actual afterwards.`);
+    }
     const c = counts(s);
     summary.textContent = [`${s.start} to ${s.end}`, `${c.new} new`, c.imported && `${c.imported} already in Actual`,
       c.before && `${c.before} before import start`, s.skipped && `${s.skipped} informational entries skipped`].filter(Boolean).join(' · ');
@@ -142,17 +168,33 @@ function statementCard(s) {
     }));
     refreshButton();
   };
-  s.target.addEventListener('change', () => {
+  const applyTarget = () => {
     const a = preview.accounts.find((x) => x.id === s.target.value);
     if (a) {
       s.nameInput.value = a.name;
       s.budgetInput.value = a.offbudget ? 'off' : 'on';
       // Default to the day after the account's newest entry to avoid duplicating history.
       s.fromInput.value = a.latest ? addDays(a.latest, 1) : '';
+    } else {
+      s.nameInput.value = s.name;
+      s.budgetInput.value = s.offbudget ? 'off' : 'on';
     }
+    if (matchNote) matchNote.classList.toggle('d-none', s.target.value !== s.suggestion?.id);
+  };
+  let matchNote;
+  s.target.addEventListener('change', () => {
+    applyTarget();
     refresh();
   });
   s.fromInput.addEventListener('input', refresh);
+  s.balanceInput.addEventListener('input', refresh);
+  const suggested = !linked && preview.accounts.find((a) => a.id === s.suggestion?.id);
+  if (suggested) {
+    s.target.value = suggested.id;
+    applyTarget();
+    matchNote = element('p', `Matched to ${suggested.name} by the ${s.suggestion.reason}. Choose another account if that's wrong.`, 'form-text mt-n2 mb-3');
+    s.target.closest('label').after(matchNote);
+  }
 
   const transferSettings = linked ? element('details', undefined, 'mb-3') : card;
   if (linked) transferSettings.append(element('summary', 'Transfer settings'));
@@ -191,7 +233,7 @@ upload.addEventListener('submit', async (event) => {
     confirmForm.hidden = false;
     const fresh = preview.statements.reduce((n, s) => n + counts(s).new, 0);
     message(preview.statements.every((s) => s.saved)
-      ? `${fresh} new transaction${fresh === 1 ? '' : 's'} to import. Check the closing balances, then import. No changes have been made in Actual.`
+      ? `${fresh} new transaction${fresh === 1 ? '' : 's'} to import. No changes have been made in Actual.`
       : 'Choose an Actual account for each new statement and check balances and transfer settings. No changes have been made in Actual.');
   } catch (err) {
     message(err.message, 'danger');

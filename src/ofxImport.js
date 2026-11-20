@@ -167,6 +167,36 @@ function activeMapping(mappings, key, accounts) {
   return m && accounts.some((a) => a.id === m.actualAccountId && !a.closed) ? m : null;
 }
 
+/**
+ * Suggest the Actual account a not-yet-linked statement belongs to: its full
+ * account number in an account's name or notes, else its last four digits in
+ * a name. Only unique matches are suggested, and never an account that is
+ * already linked elsewhere or suggested for another statement.
+ */
+function suggestAccounts(statements, accounts, notes, takenIds) {
+  const free = accounts.filter((a) => !a.closed && !takenIds.has(a.id));
+  const suggestions = new Map();
+  for (const s of statements) {
+    const number = String(s.accountId || '').replace(/[\s-]/g, '');
+    if (!/^\d{5,}$/.test(number)) continue;
+    // Allow the number to be written with spaces or dashes, e.g. 1234 5678.
+    const full = new RegExp(`(?<!\\d)${number.split('').join('[\\s-]?')}(?!\\d)`);
+    const last4 = new RegExp(`(?<!\\d)${number.slice(-4)}(?!\\d)`);
+    let matches = free.filter((a) => full.test(a.name) || full.test(notes[a.id] || ''));
+    let reason = 'account number';
+    if (!matches.length) {
+      matches = free.filter((a) => last4.test(a.name));
+      reason = 'last four digits of the account number';
+    }
+    if (matches.length === 1) suggestions.set(s.key, { id: matches[0].id, reason });
+  }
+  // Two statements pointing at one account would fail validation; suggest neither.
+  const counts = new Map();
+  for (const { id } of suggestions.values()) counts.set(id, (counts.get(id) || 0) + 1);
+  for (const [key, { id }] of suggestions) if (counts.get(id) > 1) suggestions.delete(key);
+  return suggestions;
+}
+
 function validateChoices(statements, choices, accounts, categories, upIds, mappings) {
   if (!Array.isArray(choices) || choices.length !== statements.length) throw new Error('Choose settings for every account');
   const selected = new Map(choices.map((c) => [c.key, c]));
@@ -187,7 +217,9 @@ function validateChoices(statements, choices, accounts, categories, upIds, mappi
     if (id) targets.add(id);
     if (c.upAccountId && c.upAccountId !== '__any__' && !upIds.includes(c.upAccountId)) throw new Error('Choose a linked Up account');
     if (c.transferCategoryId && !categories.some((cat) => cat.id === c.transferCategoryId)) throw new Error('Unknown transfer category');
-    const closingBalance = money(String(c.closingBalance));
+    // A linked account's sign (P&N reports loans as positive) was settled when
+    // it was linked, so its closing balance comes straight from the statement.
+    const closingBalance = saved ? s.balance * (saved.balanceSign || 1) : money(String(c.closingBalance));
     if (!saved && !id && newNames.has(c.name.trim().toLowerCase())) {
       throw new Error('An account with that name already exists; select it instead');
     }
@@ -292,4 +324,4 @@ async function importStatements(api, { statements, choices, mappings, upAccountI
   return { accounts: results, ...transfers };
 }
 
-module.exports = { importStatements, reconcileTransfers, linkPair, validateChoices, activeMapping };
+module.exports = { importStatements, reconcileTransfers, linkPair, validateChoices, activeMapping, suggestAccounts };
