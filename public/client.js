@@ -1,26 +1,28 @@
-console.log('Client-side code running');
+'use strict';
 
 const button = document.getElementById('sync');
-button.addEventListener('click', function(e) {
-  console.log('sync was clicked');
-  button.classList = 'btn btn-outline-primary'
-  button.disabled = true
-  fetch('/sync', {method: 'POST'})
-    .then(function(response) {
-      if(response.ok) {
-        console.log('Sync was finished');
-        button.classList = 'btn btn-outline-success'
-        setTimeout(function () {
-            button.classList = "btn btn-outline-secondary"
-            button.disabled = false
-        }, 2000);
-        //make green
-        return;
-      }
-      throw new Error('Request failed.');
-      //make red
-    })
-    .catch(function(error) {
-      console.log(error);
-    });
+const status = document.getElementById('status');
+
+function show(kind, text) {
+  status.replaceChildren();
+  const div = document.createElement('div');
+  div.className = `alert alert-${kind}`;
+  div.textContent = text;
+  status.append(div);
+}
+
+button?.addEventListener('click', async () => {
+  button.disabled = true;
+  show('info', 'Syncing…');
+  try {
+    const res = await fetch('/sync', { method: 'POST' });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.ok) throw new Error(body.error || `Request failed (${res.status})`);
+    const lines = body.results.map((r) => `${r.name}: ${r.added} added, ${r.updated} updated`);
+    show('success', lines.length ? `Sync complete. ${lines.join(' · ')}` : 'Sync complete. No linked accounts.');
+  } catch (err) {
+    show('danger', `Sync failed: ${err.message}`);
+  } finally {
+    button.disabled = false;
+  }
 });
