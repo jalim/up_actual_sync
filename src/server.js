@@ -118,10 +118,22 @@ function createApp({
         if (totalBytes > 8 * 1024 * 1024) throw new Error('OFX files must be smaller than 8 MB in total');
         return ofx.parse(data);
       }));
-      const details = await openBudget(config.getActual(store), settings.dataDir, async (api) => ({
-        accounts: await api.getAccounts(), categories: await api.getCategories(),
-      }));
       const mappings = config.getOfxAccounts(store);
+      // Read-only: work out what is already in Actual so the preview can show
+      // only what an import would add.
+      const details = await openBudget(config.getActual(store), settings.dataDir, async (api) => {
+        const accounts = (await api.getAccounts()).filter((a) => !a.closed);
+        const latest = {};
+        const importedIds = {};
+        for (const a of accounts) {
+          const rows = await api.getTransactions(a.id, '0001-01-01', '9999-12-31');
+          latest[a.id] = rows.reduce((d, t) => (t.date > d ? t.date : d), '') || null;
+          if (Object.values(mappings).some((m) => m.actualAccountId === a.id)) {
+            importedIds[a.id] = new Set(rows.map((t) => t.imported_id).filter(Boolean));
+          }
+        }
+        return { accounts, latest, importedIds, categories: await api.getCategories() };
+      });
       const token = crypto.randomBytes(24).toString('hex');
       const discard = (key) => {
         clearTimeout(previews.get(key)?.timer);
@@ -132,14 +144,19 @@ function createApp({
       const timer = setTimeout(() => previews.delete(token), 30 * 60000);
       timer.unref();
       previews.set(token, { statements, expires: Date.now() + 30 * 60000, scope: config.ofxScope(store), timer });
-      res.json({ token, accounts: details.accounts.filter((a) => !a.closed),
+      res.json({ token, accounts: details.accounts.map((a) => ({ ...a, latest: details.latest[a.id] })),
         categories: details.categories.filter((c) => !c.hidden),
         upAccountIds: Object.values(config.getLinkedAccounts(store)),
-        statements: statements.map((s) => ({ key: s.key, maskedAccount: `…${s.accountId.slice(-4)}`,
-          start: s.start, end: s.end, balanceDate: s.balanceDate,
-          closingBalance: mappings[s.key]?.balanceSign ? s.balance * mappings[s.key].balanceSign : s.suggestedBalance,
-          name: `P&N ${s.loan ? 'Home Loan' : 'Account'} ${s.accountId.slice(-4)}`, offbudget: s.loan,
-          skipped: s.skipped, transactions: s.transactions, saved: mappings[s.key] || null })),
+        statements: statements.map((s) => {
+          const saved = ofxImport.activeMapping(mappings, s.key, details.accounts);
+          const seen = saved ? details.importedIds[saved.actualAccountId] : new Set();
+          return { key: s.key, maskedAccount: `…${s.accountId.slice(-4)}`,
+            start: s.start, end: s.end, balanceDate: s.balanceDate,
+            closingBalance: mappings[s.key]?.balanceSign ? s.balance * mappings[s.key].balanceSign : s.suggestedBalance,
+            name: `P&N ${s.loan ? 'Home Loan' : 'Account'} ${s.accountId.slice(-4)}`, offbudget: s.loan,
+            skipped: s.skipped, saved, relink: !saved && !!mappings[s.key],
+            transactions: s.transactions.map((t) => ({ ...t, imported: seen.has(t.imported_id) })) };
+        }),
       });
     } catch (err) {
       res.status(400).json({ error: err.message });

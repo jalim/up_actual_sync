@@ -53,8 +53,9 @@ test('OFX preview is read-only and import reuses the server-side statement', asy
   // exercised against Actual itself in ofxImport.test.js.
   let created = 0;
   const txns = [];
+  let accounts = [];
   const api = {
-    getAccounts: async () => [], getCategories: async () => [], getPayees: async () => [],
+    getAccounts: async () => accounts, getCategories: async () => [], getPayees: async () => [],
     createAccount: async () => { created++; return 'ofx-created'; },
     addTransactions: async (account, rows) => { txns.push(...rows.map((r) => ({ ...r, account }))); },
     getTransactions: async () => txns, getAccountBalance: async () => 20000, sync: async () => {},
@@ -68,6 +69,7 @@ test('OFX preview is read-only and import reuses the server-side statement', asy
   assert.equal(res.status, 200);
   const preview = await res.json();
   assert.equal(created, 0);
+  assert.equal(preview.statements[0].transactions[0].imported, false);
   assert.equal(preview.statements[0].maskedAccount, '…ings');
   assert.equal(preview.statements[0].accountId, undefined);
   assert.equal((await post('/ofx/import', { token: 'unknown', choices: [] })).status, 400);
@@ -77,6 +79,11 @@ test('OFX preview is read-only and import reuses the server-side statement', asy
   assert.equal(created, 1);
   assert.equal((await res.json()).accounts[0].added, 1);
   assert.equal((await post('/ofx/import', { token: preview.token, choices })).status, 400, 'successful previews cannot be replayed');
+  accounts = [{ id: 'ofx-created', name: 'P&N Test' }];
+  res = await post('/ofx/preview', { files: [{ content: Buffer.from(statement({ transactions: [{ amount: '10.00', memo: 'Credit Ref#123' }] })).toString('base64') }] });
+  const again = (await res.json()).statements[0];
+  assert.equal(again.saved.actualAccountId, 'ofx-created');
+  assert.equal(again.transactions[0].imported, true, 'preview marks rows that are already in Actual');
   assert.match(fs.readFileSync(file, 'utf8'), /ofx-created/);
 });
 

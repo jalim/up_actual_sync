@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const { money } = require('./ofx');
+const { isValidDate } = require('./initialise');
 
 function addDays(date, days) {
   const d = new Date(`${date}T00:00:00Z`);
@@ -160,6 +161,12 @@ async function reconcileTransfers(api, mappings, upAccountIds = []) {
   return result;
 }
 
+/** A saved link is only usable while its Actual account exists and is open. */
+function activeMapping(mappings, key, accounts) {
+  const m = mappings[key];
+  return m && accounts.some((a) => a.id === m.actualAccountId && !a.closed) ? m : null;
+}
+
 function validateChoices(statements, choices, accounts, categories, upIds, mappings) {
   if (!Array.isArray(choices) || choices.length !== statements.length) throw new Error('Choose settings for every account');
   const selected = new Map(choices.map((c) => [c.key, c]));
@@ -170,7 +177,8 @@ function validateChoices(statements, choices, accounts, categories, upIds, mappi
     const c = selected.get(s.key);
     if (!c || typeof c.name !== 'string' || !c.name.trim() || c.name.length > 100) throw new Error('Enter an account name (up to 100 characters)');
     if (typeof c.offbudget !== 'boolean') throw new Error('Choose whether the account is off-budget');
-    const saved = mappings[s.key];
+    // A stale link (deleted/closed account) is replaced rather than blocking imports.
+    const saved = activeMapping(mappings, s.key, accounts);
     const id = saved?.actualAccountId || c.actualAccountId;
     if (id && !accounts.some((a) => a.id === id && !a.closed)) throw new Error('Selected Actual account is missing or closed');
     if (id && (targets.has(id) || Object.entries(mappings).some(([key, m]) => key !== s.key && m.actualAccountId === id))) {
@@ -184,7 +192,15 @@ function validateChoices(statements, choices, accounts, categories, upIds, mappi
       throw new Error('An account with that name already exists; select it instead');
     }
     if (!id) newNames.add(c.name.trim().toLowerCase());
-    return { statement: s, choice: c, saved, id, closingBalance };
+    // Linking an account that already has history from elsewhere: only take
+    // statement rows from this date on. Saved with the link so later, overlapping
+    // exports never re-add the older rows.
+    let importFrom = saved ? saved.importFrom || '' : '';
+    if (!saved && id && c.importFrom) {
+      if (typeof c.importFrom !== 'string' || !isValidDate(c.importFrom)) throw new Error('Enter a valid import start date');
+      importFrom = c.importFrom;
+    }
+    return { statement: s, choice: c, saved, id, closingBalance, importFrom };
   });
 }
 
@@ -210,8 +226,9 @@ async function importStatements(api, { statements, choices, mappings, upAccountI
       w.openingId = openingId;
       w.openingBase = openingBalance;
     }
+    const effectiveStart = w.importFrom > s.start ? w.importFrom : s.start;
     mappings[s.key] = { ...(w.saved || {}), actualAccountId: w.id,
-      start: w.saved?.start || s.start, openingId: w.saved?.openingId || w.openingId,
+      start: w.saved?.start || effectiveStart, ...(w.importFrom ? { importFrom: w.importFrom } : {}), openingId: w.saved?.openingId || w.openingId,
       initialStart: w.saved?.initialStart || s.start, openingBase: w.saved?.openingBase ?? w.openingBase,
       balanceSign: s.balance === 0 ? (w.saved?.balanceSign || 1) : (Math.sign(w.closingBalance) === Math.sign(s.balance) ? 1 : -1),
       upAccountId: c.upAccountId || '', transferCategoryId: c.transferCategoryId || '' };
@@ -225,7 +242,8 @@ async function importStatements(api, { statements, choices, mappings, upAccountI
     const m = mappings[s.key];
     const existing = await api.getTransactions(w.id, '0001-01-01', '9999-12-31');
     const seen = new Set(existing.map((t) => t.imported_id));
-    const unseen = s.transactions.filter((t) => !seen.has(t.imported_id));
+    const inRange = s.transactions.filter((t) => !m.importFrom || t.date >= m.importFrom);
+    const unseen = inRange.filter((t) => !seen.has(t.imported_id));
     const transferMatches = await existingTransferMatches(api, w.id,
       unseen.map((t) => ({ ...t, imported_payee: t.description })), existing, upAccountIds);
     const deferred = [];
@@ -249,14 +267,16 @@ async function importStatements(api, { statements, choices, mappings, upAccountI
         .filter((t) => t.date < m.initialStart).reduce((sum, t) => sum + t.amount, 0);
       await api.updateTransaction(opening.id, { amount: m.openingBase - earlierTotal, date: addDays(s.start < m.start ? s.start : m.start, -1) });
     }
-    if (s.start < m.start) m.start = s.start;
+    const statementStart = m.importFrom > s.start ? m.importFrom : s.start;
+    if (statementStart < m.start) m.start = statementStart;
     // Exact identity checks intentionally avoid Actual's fuzzy import matching:
     // distinct P&N payments can have the same amount on the same day.
     await api.addTransactions(w.id, fresh.map((t) => ({ date: t.date, amount: t.amount,
       imported_id: t.imported_id, imported_payee: t.description, payee_name: t.description,
       notes: t.description, cleared: true })), { runTransfers: false, learnCategories: true });
     results.push({ actualAccountId: w.id, name: accounts.find((a) => a.id === w.id)?.name || w.choice.name.trim(), added: fresh.length,
-      duplicates: s.transactions.length - unseen.length, attached, deferred, skipped: s.skipped,
+      duplicates: inRange.length - unseen.length, beforeImportFrom: s.transactions.length - inRange.length,
+      importFrom: m.importFrom || null, attached, deferred, skipped: s.skipped,
       balanceDate: s.balanceDate, closingBalance: w.closingBalance });
     await api.sync();
     await saveMappings(mappings);
@@ -272,4 +292,4 @@ async function importStatements(api, { statements, choices, mappings, upAccountI
   return { accounts: results, ...transfers };
 }
 
-module.exports = { importStatements, reconcileTransfers, linkPair, validateChoices };
+module.exports = { importStatements, reconcileTransfers, linkPair, validateChoices, activeMapping };

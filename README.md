@@ -39,7 +39,12 @@ The budget is cached in `/home/node/app/budgets` (about 15 MB for a typical budg
 
 ## P&N OFX imports
 
-Open **Import OFX** in the web UI, select your P&N exports, then choose **Preview files**. You can upload several accounts and overlapping exports together. Nothing changes in Actual until you choose **Create accounts and import**.
+Open **Import OFX** in the web UI, select your P&N exports, then choose **Preview files**. You can upload several accounts and overlapping exports together. Nothing changes in Actual until you choose **Import**.
+
+Statements you've imported before are recognised automatically. The preview shows how many transactions are new and how many are already in Actual, and the import adds only the new ones. For routine top-ups, just upload the latest export, check the closing balance and import.
+
+- To add P&N transactions to an Actual account that already has history entered some other way, select that account and set **Import transactions from**. It defaults to the day after the account's newest transaction. Earlier statement rows are left out, and the date is saved with the link so later overlapping exports don't re-add them.
+- If a linked Actual account is closed or deleted, the preview asks you to choose another account or create a new one.
 
 - Review each account name, choose a new or existing Actual account, and check its budget status. Home loans are suggested as off-budget even when P&N labels them `SAVINGS`.
 - Check the signed closing balance. Money owed should be negative; P&N can report a loan balance as positive. A new account's opening balance is calculated from the closing balance less the exported transactions and dated before the statement period. Existing accounts retain their opening balance and budget status.

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0
+
+### Changed
+
+- **OFX uploads are built for adding new transactions.** The preview marks each statement row as new, already in Actual, or before the import start, and imports only the new ones. Statements that are already linked get a compact card: the target account, the closing balance to check, and collapsed transfer settings.
+- **Importing into an Actual account that already has history.** Selecting an existing account shows an **Import transactions from** date, defaulting to the day after that account's newest transaction. The date is saved with the link, so later overlapping exports don't re-add older rows.
+
+### Fixed
+
+- A statement linked to a deleted or closed Actual account can be linked to another account. Previously every later import failed with "Selected Actual account is missing or closed".
+
 ## 1.1.0
 
 ### Changed

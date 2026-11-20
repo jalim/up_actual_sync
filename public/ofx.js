@@ -53,6 +53,119 @@ function input(value, type = 'text') {
 
 const dollars = (amount) => (amount / 100).toFixed(2);
 
+function addDays(date, days) {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** The date before which statement rows are left out (accounts linked after the fact). */
+function importFrom(s) {
+  if (s.saved) return s.saved.importFrom || '';
+  return s.target.value ? s.fromInput.value : '';
+}
+
+function rowStatus(s, t) {
+  if (t.imported) return 'Already in Actual';
+  const from = importFrom(s);
+  return from && t.date < from ? 'Before import start' : 'New';
+}
+
+function counts(s) {
+  const c = { new: 0, imported: 0, before: 0 };
+  for (const t of s.transactions) {
+    const st = rowStatus(s, t);
+    c[st === 'New' ? 'new' : st === 'Already in Actual' ? 'imported' : 'before']++;
+  }
+  return c;
+}
+
+function refreshButton() {
+  // Cards still being built have no target yet; the caller refreshes once all exist.
+  document.getElementById('ofx-import').textContent = preview.statements.some((s) => !s.saved && s.target && !s.target.value)
+    ? 'Create accounts and import' : 'Import transactions';
+}
+
+function statementCard(s) {
+  const card = element('section', undefined, 'card card-body mb-4');
+  const linked = preview.accounts.find((a) => a.id === s.saved?.actualAccountId);
+  card.append(element('h2', linked ? `${s.name} (${s.maskedAccount}) → ${linked.name}` : `${s.name} (${s.maskedAccount})`, 'h4'));
+  const summary = element('p');
+  card.append(summary);
+  if (s.relink) {
+    card.append(element('p', 'The Actual account this statement was linked to has been closed or deleted. Choose another account or create a new one.', 'alert alert-warning'));
+  }
+  // Already-linked statements only need a balance check and transfer settings.
+  s.target = select([['', 'Create a new account'], ...preview.accounts.map((a) => [a.id, a.name])], s.saved?.actualAccountId);
+  if (!linked) field(card, 'Actual account', s.target);
+  s.nameInput = input(linked?.name || s.name);
+  s.nameInput.maxLength = 100;
+  s.budgetInput = select([['on', 'On-budget'], ['off', 'Off-budget (for example, a home loan)']], (linked ? linked.offbudget : s.offbudget) ? 'off' : 'on');
+  s.fromInput = input('', 'date');
+  s.fromInput.required = false;
+  const nameField = linked ? null : field(card, 'New account name', s.nameInput).parentElement;
+  const budgetField = linked ? null : field(card, 'New account budget status', s.budgetInput).parentElement;
+  const fromField = linked ? null : field(card, 'Import transactions from (earlier statement entries are assumed to be in Actual already; clear to import everything)', s.fromInput).parentElement;
+  s.balanceInput = input(dollars(s.closingBalance), 'number');
+  s.balanceInput.step = '0.01';
+  const balanceLabel = field(card, '', s.balanceInput).parentElement.firstChild;
+  const details = element('details');
+  const detailsSummary = element('summary');
+  details.append(detailsSummary);
+  const table = element('table', undefined, 'table table-sm');
+  const head = element('thead');
+  const heading = element('tr');
+  for (const name of ['Date', 'Description', 'Amount', 'Status']) heading.append(element('th', name));
+  head.append(heading);
+  const body = element('tbody');
+  table.append(head, body);
+  details.append(table);
+
+  const refresh = () => {
+    const existing = !!s.target.value;
+    if (!linked) {
+      nameField.classList.toggle('d-none', existing);
+      budgetField.classList.toggle('d-none', existing);
+      fromField.classList.toggle('d-none', !existing);
+    }
+    balanceLabel.textContent = existing
+      ? `Closing balance at ${s.balanceDate} (negative for debt; checked against Actual after import)`
+      : `Closing balance at ${s.balanceDate} (negative for debt; sets the new account's opening balance)`;
+    const c = counts(s);
+    summary.textContent = [`${s.start} to ${s.end}`, `${c.new} new`, c.imported && `${c.imported} already in Actual`,
+      c.before && `${c.before} before import start`, s.skipped && `${s.skipped} informational entries skipped`].filter(Boolean).join(' · ');
+    detailsSummary.textContent = `View transactions (${c.new} new)`;
+    body.replaceChildren(...s.transactions.map((t) => {
+      const row = element('tr', undefined, rowStatus(s, t) === 'New' ? '' : 'text-body-secondary');
+      for (const v of [t.date, t.description, dollars(t.amount), rowStatus(s, t)]) row.append(element('td', v));
+      return row;
+    }));
+    refreshButton();
+  };
+  s.target.addEventListener('change', () => {
+    const a = preview.accounts.find((x) => x.id === s.target.value);
+    if (a) {
+      s.nameInput.value = a.name;
+      s.budgetInput.value = a.offbudget ? 'off' : 'on';
+      // Default to the day after the account's newest entry to avoid duplicating history.
+      s.fromInput.value = a.latest ? addDays(a.latest, 1) : '';
+    }
+    refresh();
+  });
+  s.fromInput.addEventListener('input', refresh);
+
+  const transferSettings = linked ? element('details', undefined, 'mb-3') : card;
+  if (linked) transferSettings.append(element('summary', 'Transfer settings'));
+  s.upInput = field(transferSettings, 'Up accounts for transfer matching', select([['', 'Only reuse transfers already linked in Actual'],
+    ['__any__', 'Any linked Up account (unique matches only)'],
+    ...preview.accounts.filter((a) => preview.upAccountIds.includes(a.id)).map((a) => [a.id, a.name])], s.saved ? s.saved.upAccountId : '__any__'));
+  s.categoryInput = field(transferSettings, 'Category for transfers crossing the budget boundary (optional)', select([['', 'Categorise later in Actual'], ...preview.categories.map((c) => [c.id, c.name])], s.saved?.transferCategoryId));
+  if (linked) card.append(transferSettings);
+  card.append(details);
+  refresh();
+  return card;
+}
+
 upload.addEventListener('submit', async (event) => {
   event.preventDefault();
   confirmForm.hidden = true;
@@ -73,54 +186,13 @@ upload.addEventListener('submit', async (event) => {
     })));
     preview = await post('/ofx/preview', { files: encoded });
     accountContainer.replaceChildren();
-    for (const s of preview.statements) {
-      const card = element('section', undefined, 'card card-body mb-4');
-      card.append(element('h2', `${s.name} (${s.maskedAccount})`, 'h4'));
-      card.append(element('p', `${s.start} to ${s.end} · ${s.transactions.length} transactions · ${s.skipped} informational entries skipped`));
-      const savedAccount = preview.accounts.find((a) => a.id === s.saved?.actualAccountId);
-      s.target = field(card, 'Actual account', select([['', 'Create a new account'], ...preview.accounts.map((a) => [a.id, a.name])], s.saved?.actualAccountId));
-      s.target.disabled = !!s.saved;
-      s.nameInput = field(card, 'New account name', input(savedAccount?.name || s.name));
-      s.nameInput.maxLength = 100;
-      s.budgetInput = field(card, 'New account budget status', select([['on', 'On-budget'], ['off', 'Off-budget (for example, a home loan)']], (savedAccount ? savedAccount.offbudget : s.offbudget) ? 'off' : 'on'));
-      s.balanceInput = field(card, `Closing balance at ${s.balanceDate} (negative for debt; used to initialise new accounts)`, input(dollars(s.closingBalance), 'number'));
-      s.balanceInput.step = '0.01';
-      const updateTarget = () => {
-        const existing = !!s.target.value;
-        s.nameInput.disabled = existing;
-        s.budgetInput.disabled = existing;
-        if (existing) {
-          const a = preview.accounts.find((a) => a.id === s.target.value);
-          s.nameInput.value = a?.name || s.name;
-          s.budgetInput.value = a?.offbudget ? 'off' : 'on';
-        }
-      };
-      s.target.addEventListener('change', updateTarget);
-      updateTarget();
-      s.upInput = field(card, 'Up accounts for transfer matching', select([['', 'Only reuse transfers already linked in Actual'],
-        ['__any__', 'Any linked Up account (unique matches only)'],
-        ...preview.accounts.filter((a) => preview.upAccountIds.includes(a.id)).map((a) => [a.id, a.name])], s.saved ? s.saved.upAccountId : '__any__'));
-      s.categoryInput = field(card, 'Category for transfers crossing the budget boundary (optional)', select([['', 'Categorise later in Actual'], ...preview.categories.map((c) => [c.id, c.name])], s.saved?.transferCategoryId));
-      const details = element('details');
-      details.append(element('summary', 'View transactions'));
-      const table = element('table', undefined, 'table table-sm');
-      const head = element('thead');
-      const heading = element('tr');
-      for (const name of ['Date', 'Description', 'Amount']) heading.append(element('th', name));
-      head.append(heading);
-      const body = element('tbody');
-      for (const t of s.transactions) {
-        const row = element('tr');
-        for (const v of [t.date, t.description, dollars(t.amount)]) row.append(element('td', v));
-        body.append(row);
-      }
-      table.append(head, body);
-      details.append(table);
-      card.append(details);
-      accountContainer.append(card);
-    }
+    for (const s of preview.statements) accountContainer.append(statementCard(s));
+    refreshButton();
     confirmForm.hidden = false;
-    message('Review names, debt balances and transfer settings. No changes have been made in Actual.');
+    const fresh = preview.statements.reduce((n, s) => n + counts(s).new, 0);
+    message(preview.statements.every((s) => s.saved)
+      ? `${fresh} new transaction${fresh === 1 ? '' : 's'} to import. Check the closing balances, then import. No changes have been made in Actual.`
+      : 'Choose an Actual account for each new statement and check balances and transfer settings. No changes have been made in Actual.');
   } catch (err) {
     message(err.message, 'danger');
   } finally {
@@ -138,12 +210,13 @@ confirmForm.addEventListener('submit', async (event) => {
     const result = await post('/ofx/import', { token: preview.token, choices: preview.statements.map((s) => ({
       key: s.key, actualAccountId: s.target.value, name: s.nameInput.value,
       offbudget: s.budgetInput.value === 'off', closingBalance: s.balanceInput.value,
-      upAccountId: s.upInput.value, transferCategoryId: s.categoryInput.value,
+      upAccountId: s.upInput.value, transferCategoryId: s.categoryInput.value, importFrom: importFrom(s),
     })) });
     confirmForm.hidden = true;
     resultContainer.replaceChildren(element('h2', 'Import results', 'h4'));
     for (const a of result.accounts) {
-      resultContainer.append(element('p', `${a.name}: ${a.added} added, ${a.duplicates} already imported, ${a.attached} matched existing transfers. Balance at ${a.balanceDate}: $${dollars(a.actualBalance)}${a.balanceMatches ? ' (matches statement)' : ` — statement says $${dollars(a.closingBalance)}; reconcile in Actual`}.`));
+      const before = a.beforeImportFrom ? `, ${a.beforeImportFrom} before ${a.importFrom} left out` : '';
+      resultContainer.append(element('p', `${a.name}: ${a.added} added, ${a.duplicates} already imported${before}, ${a.attached} matched existing transfers. Balance at ${a.balanceDate}: $${dollars(a.actualBalance)}${a.balanceMatches ? ' (matches statement)' : ` — statement says $${dollars(a.closingBalance)}; reconcile in Actual`}.`));
     }
     for (const warning of result.warnings) resultContainer.append(element('p', warning, 'alert alert-warning'));
     if (result.review.length) {
