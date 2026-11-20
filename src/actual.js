@@ -17,7 +17,8 @@ function serialize(fn) {
 }
 
 function assertConfigured(actual) {
-  const missing = ['serverUrl', 'serverPassword', 'budgetId'].filter((k) => !actual[k]);
+  const missing = ['serverUrl', 'budgetId'].filter((k) => !actual[k]);
+  if (!actual.apiKey && !actual.serverPassword) missing.push('apiKey or serverPassword');
   if (missing.length) {
     throw new Error(`Actual Budget is not configured (missing: ${missing.join(', ')})`);
   }
@@ -26,6 +27,12 @@ function assertConfigured(actual) {
 async function resetDir(dir) {
   await fs.rm(dir, { recursive: true, force: true });
   await fs.mkdir(dir, { recursive: true });
+}
+
+/** An API key takes precedence over the password (OpenID servers have none). */
+function initOptions(actual, dataDir) {
+  const auth = actual.apiKey ? { sessionToken: actual.apiKey } : { password: actual.serverPassword };
+  return { dataDir, serverURL: actual.serverUrl, ...auth };
 }
 
 /**
@@ -38,11 +45,7 @@ function withBudget(actual, dataDir, fn) {
     await resetDir(dataDir);
     let initialised = false;
     try {
-      await api.init({
-        dataDir,
-        serverURL: actual.serverUrl,
-        password: actual.serverPassword,
-      });
+      await api.init(initOptions(actual, dataDir));
       initialised = true;
       await api.downloadBudget(
         actual.budgetId,
@@ -62,4 +65,4 @@ function withBudget(actual, dataDir, fn) {
   });
 }
 
-module.exports = { withBudget, serialize };
+module.exports = { withBudget, serialize, initOptions, assertConfigured };

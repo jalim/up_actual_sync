@@ -27,7 +27,7 @@ docker run -d --name up-actual-sync \
 
 Then open `http://localhost:3000`:
 
-1. **Setup**: enter your Up token, Actual server URL and password, budget sync ID (Actual → Settings → Advanced → Sync ID), and the end-to-end encryption password if your budget is encrypted. Saving verifies both connections.
+1. **Setup**: enter your Up token, Actual server URL, an Actual API key or server password (see [Actual authentication](#actual-authentication)), budget sync ID (Actual → Settings → Advanced → Sync ID), and the end-to-end encryption password if your budget is encrypted. Saving verifies both connections.
 2. **Link accounts**: pick the Actual account for each Up account you want synced.
 3. **Sync now**, or wait for the schedule.
 
@@ -56,7 +56,7 @@ Credentials and account links are written to the config file by the web UI. You 
   "UP": { "token": "up:yeah:..." },
   "actual": {
     "serverUrl": "https://actual.example.com",
-    "serverPassword": "...",
+    "apiKey": "...",
     "budgetId": "sync-id",
     "budgetEncryption": ""
   },
@@ -69,6 +69,15 @@ Credentials and account links are written to the config file by the web UI. You 
 Nested keys can be set from the environment with `__`, e.g. `UP__token=...` or `actual__serverUrl=...`.
 
 The config file holds secrets. Keep it out of version control and readable only by the service.
+
+## Actual authentication
+
+Use **one** of:
+
+- **API key (recommended; required if your server uses OpenID/OIDC).** In Actual, open the budget, go to **Settings → General → Security → API keys**, choose **Add key**, and copy the key. It's shown only once. Keys are scoped to that budget and can be revoked from the same screen. Set it as `actual.apiKey` (or `actual__apiKey`).
+- **Server password**, for servers using password login. Set it as `actual.serverPassword`.
+
+If both are set, the API key is used. The budget's end-to-end encryption password (`actual.budgetEncryption`) is separate and still needed if the budget is encrypted.
 
 ## Upgrading from 1.x
 

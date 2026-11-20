@@ -44,7 +44,7 @@ test('setup page never echoes saved secrets', async (t) => {
   const { base } = await start(t, {
     fileContents: {
       UP: { token: 'up:yeah:SECRET_TOKEN' },
-      actual: { serverUrl: 'https://a.example', serverPassword: 'SECRET_PW', budgetEncryption: 'SECRET_ENC', budgetId: 'b' },
+      actual: { serverUrl: 'https://a.example', serverPassword: 'SECRET_PW', apiKey: 'SECRET_KEY', budgetEncryption: 'SECRET_ENC', budgetId: 'b' },
     },
   });
   const html = await (await fetch(`${base}/setup`)).text();
@@ -96,4 +96,14 @@ test('basic auth is enforced when configured', async (t) => {
   assert.equal((await fetch(`${base}/`, { headers: { Authorization: `Basic ${bad}` } })).status, 401);
   const good = Buffer.from('me:pw').toString('base64');
   assert.equal((await fetch(`${base}/`, { headers: { Authorization: `Basic ${good}` } })).status, 200);
+});
+
+test('setup requires an Actual API key or password', async (t) => {
+  const { base } = await start(t);
+  const res = await fetch(`${base}/setup`, {
+    method: 'POST',
+    body: new URLSearchParams({ token: 't', serverUrl: 'https://a.example', budgetId: 'b' }),
+  });
+  assert.equal(res.status, 400);
+  assert.match(await res.text(), /API key or server password/);
 });

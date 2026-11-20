@@ -73,6 +73,9 @@ function getActual(store) {
   return {
     serverUrl: a.serverUrl || '',
     serverPassword: a.serverPassword || '',
+    // Budget-scoped API key (Settings → General → Security → API keys).
+    // Required when the server uses OpenID, where there is no password.
+    apiKey: a.apiKey || '',
     budgetId: a.budgetId || '',
     budgetEncryption: a.budgetEncryption || '',
   };

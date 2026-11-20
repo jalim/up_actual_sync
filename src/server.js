@@ -83,6 +83,7 @@ function createApp({ store, settings, runSync, getLastSync, upClient = upBank })
     return {
       hasToken: !!config.getUpToken(store),
       hasServerPassword: !!actual.serverPassword,
+      hasApiKey: !!actual.apiKey,
       hasEncryption: !!actual.budgetEncryption,
       serverUrl: actual.serverUrl,
       budgetId: actual.budgetId,
@@ -102,10 +103,16 @@ function createApp({ store, settings, runSync, getLastSync, upClient = upBank })
     const actual = {
       serverUrl: (body.serverUrl || '').trim(),
       budgetId: (body.budgetId || '').trim(),
-      serverPassword: body.serverPassword || current.serverPassword,
+      serverPassword: body.clearServerPassword ? '' : body.serverPassword || current.serverPassword,
+      apiKey: body.clearApiKey ? '' : (body.apiKey || '').trim() || current.apiKey,
       budgetEncryption: body.clearEncryption ? '' : body.budgetEncryption || current.budgetEncryption,
     };
     const form = { serverUrl: actual.serverUrl, budgetId: actual.budgetId };
+    if (!actual.apiKey && !actual.serverPassword) {
+      return res
+        .status(400)
+        .render('setup', setupView({ ...form, error: 'Enter an Actual API key or server password.' }));
+    }
 
     try {
       if (!(await upClient.validate(token))) {
