@@ -1,46 +1,58 @@
 extends layout
 
 block content
-  h1.h3 Setup
+  .page-heading
+    div
+      .eyebrow MAKE YOURSELF AT HOME
+      h1 Connection settings
+      p Connect Up Bank and your Actual budget. Saved credentials stay hidden.
   if success
     .alert.alert-success Saved. Up token and Actual budget verified.
   if error
     .alert.alert-danger= error
-  form(method='POST' action='/setup' autocomplete='off')
-    .mb-3
-      label.form-label(for='token') Up personal access token
-      input#token.form-control(type='password' name='token' placeholder=hasToken ? 'Saved (leave blank to keep)' : 'up:yeah:...')
-      .form-text Get one at #[a(href='https://api.up.com.au/getting_started' target='_blank' rel='noopener') api.up.com.au].
-    .mb-3
-      label.form-label(for='serverUrl') Actual server URL
-      input#serverUrl.form-control(type='url' name='serverUrl' required placeholder='https://actual.example.com' value=serverUrl)
-    fieldset.mb-3.border.rounded.p-3
-      legend.fs-6.w-auto.px-1.mb-0 Actual authentication (one of)
+  form.settings-form(method='POST' action='/setup' autocomplete='off')
+    .form-section
+      h2
+        span.section-number 01
+        | Up Bank
       .mb-3
-        label.form-label(for='apiKey') API key
-        input#apiKey.form-control(type='password' name='apiKey' placeholder=hasApiKey ? 'Saved (leave blank to keep)' : '')
-        .form-text Required if your server uses OpenID. In Actual: Settings → General → Security → API keys → Add key.
-        if hasApiKey
-          .form-check.mt-1
-            input#clearApiKey.form-check-input(type='checkbox' name='clearApiKey' value='1')
-            label.form-check-label(for='clearApiKey') Remove saved API key
-      div
-        label.form-label(for='serverPassword') Server password
-        input#serverPassword.form-control(type='password' name='serverPassword' placeholder=hasServerPassword ? 'Saved (leave blank to keep)' : '')
-        .form-text Only for password login. Ignored when an API key is set.
-        if hasServerPassword
-          .form-check.mt-1
-            input#clearServerPassword.form-check-input(type='checkbox' name='clearServerPassword' value='1')
-            label.form-check-label(for='clearServerPassword') Remove saved password
-    .mb-3
-      label.form-label(for='budgetId') Actual budget sync ID
-      input#budgetId.form-control(type='text' name='budgetId' required value=budgetId)
-      .form-text Settings → Show advanced settings → Sync ID.
-    .mb-3
-      label.form-label(for='budgetEncryption') Budget end-to-end encryption password
-      input#budgetEncryption.form-control(type='password' name='budgetEncryption' placeholder=hasEncryption ? 'Saved (leave blank to keep)' : 'Leave blank if not encrypted')
-      if hasEncryption
-        .form-check.mt-2
-          input#clearEncryption.form-check-input(type='checkbox' name='clearEncryption' value='1')
-          label.form-check-label(for='clearEncryption') Remove saved encryption password
-    button.btn.btn-primary(type='submit') Save and verify
+        label.form-label(for='token') Up personal access token
+        input#token.form-control(type='password' name='token' placeholder=hasToken ? 'Saved (leave blank to keep)' : 'up:yeah:...')
+        .form-text Get one at #[a(href='https://api.up.com.au/getting_started' target='_blank' rel='noopener') api.up.com.au].
+    .form-section
+      h2
+        span.section-number 02
+        | Actual Budget
+      .mb-3
+        label.form-label(for='serverUrl') Actual server URL
+        input#serverUrl.form-control(type='url' name='serverUrl' required placeholder='https://actual.example.com' value=serverUrl)
+      fieldset.mb-3.border.rounded.p-3
+        legend.fs-6.w-auto.px-1.mb-0 Actual authentication (one of)
+        .mb-3
+          label.form-label(for='apiKey') API key
+          input#apiKey.form-control(type='password' name='apiKey' placeholder=hasApiKey ? 'Saved (leave blank to keep)' : '')
+          .form-text Required if your server uses OpenID. In Actual: Settings → General → Security → API keys → Add key.
+          if hasApiKey
+            .form-check.mt-1
+              input#clearApiKey.form-check-input(type='checkbox' name='clearApiKey' value='1')
+              label.form-check-label(for='clearApiKey') Remove saved API key
+        div
+          label.form-label(for='serverPassword') Server password
+          input#serverPassword.form-control(type='password' name='serverPassword' placeholder=hasServerPassword ? 'Saved (leave blank to keep)' : '')
+          .form-text Only for password login. Ignored when an API key is set.
+          if hasServerPassword
+            .form-check.mt-1
+              input#clearServerPassword.form-check-input(type='checkbox' name='clearServerPassword' value='1')
+              label.form-check-label(for='clearServerPassword') Remove saved password
+      .mb-3
+        label.form-label(for='budgetId') Actual budget sync ID
+        input#budgetId.form-control(type='text' name='budgetId' required value=budgetId)
+        .form-text Settings → Show advanced settings → Sync ID.
+      .mb-3
+        label.form-label(for='budgetEncryption') Budget end-to-end encryption password
+        input#budgetEncryption.form-control(type='password' name='budgetEncryption' placeholder=hasEncryption ? 'Saved (leave blank to keep)' : 'Leave blank if not encrypted')
+        if hasEncryption
+          .form-check.mt-2
+            input#clearEncryption.form-check-input(type='checkbox' name='clearEncryption' value='1')
+            label.form-check-label(for='clearEncryption') Remove saved encryption password
+    button.btn.btn-primary(type='submit') Save and verify connection

@@ -99,6 +99,13 @@ function createApp({
   app.use(express.json({ limit: '12mb' }));
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
+  app.use((req, res, next) => {
+    const accountPage = req.path.startsWith('/transfers') || req.path === '/accounts/create';
+    res.locals.activePath = accountPage ? '/link' : req.path;
+    res.locals.title = { '/': 'Overview', '/link': 'Accounts', '/setup': 'Connection settings', '/ofx': 'Statement imports' }[res.locals.activePath];
+    next();
+  });
+
   app.get('/healthz', (req, res) => res.json({ ok: true }));
 
   // Parsed uploads stay in memory for 30 minutes, never in the config or on disk.
@@ -201,6 +208,8 @@ function createApp({
   app.get('/', (req, res) => {
     res.render('index', {
       lastSync: getLastSync(),
+      cronEnabled: settings.cronEnabled,
+      cronSchedule: settings.cronSchedule,
       linkedCount: Object.keys(config.getLinkedAccounts(store)).length,
     });
   });

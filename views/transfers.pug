@@ -1,7 +1,8 @@
 extends layout
 
 block content
-  h1.h3 Link existing transfers
+  .eyebrow ACCOUNT MAINTENANCE
+  h1 Connect your transfers
   if done
     .alert.alert-success
       | Linked #{result.linked} transfer#{result.linked === 1 ? '' : 's'}.

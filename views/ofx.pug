@@ -1,11 +1,18 @@
 extends layout
 
 block content
-  h1 Import P&N statements
+  .page-heading
+    div
+      .eyebrow STATEMENT IMPORTS
+      h1 More history. One budget.
+      p Bring your P&N accounts into the picture.
   p Upload one or more OFX exports. Statements you've imported before are recognised automatically, and only new transactions are added. Overlapping exports are fine.
   .alert.alert-info
     | First time for an account? Start with the oldest history you want to keep. To add to an Actual account that already has history, select it and choose the date to import from. Loans usually belong off-budget, and money owed should be negative.
-  form#ofx-upload
+  form#ofx-upload.upload-zone
+    +icon('import')
+    h2 Start with your statements
+    p Choose your OFX or QFX exports. You’ll review accounts and balances before importing.
     label.form-label(for='ofx-files') OFX files (up to 10 files, 5 MB each; 8 MB total)
     input#ofx-files.form-control(type='file' accept='.ofx,.qfx' multiple required)
     button.btn.btn-primary.mt-3(type='submit') Preview files

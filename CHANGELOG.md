@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Rebuilt the web UI** with an Actual-inspired violet theme, persistent navigation, and responsive layouts across the dashboard, settings, account linking, statement imports, transfer repair, and result pages.
+- **Overview dashboard** shows linked account count, the last sync outcome, the configured automatic-sync schedule, and per-account sync activity. Manual sync updates results in place with loading and error feedback. Activity is retained only for the current server session.
+- **Connection settings** groups Up and Actual credentials into separate sections. Statement imports have a dedicated upload area while keeping the existing preview and confirmation flow.
+- Styles and SVG icons are served locally, replacing the Bootstrap CDN stylesheet. The UI remains server-rendered with Express/Pug and needs no frontend build step.
+
 ## 1.2.1
 
 ### Changed

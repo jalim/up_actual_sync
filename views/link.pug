@@ -1,7 +1,11 @@
 extends layout
 
 block content
-  h1.h3 Link accounts
+  .page-heading
+    div
+      .eyebrow YOUR CONNECTED ACCOUNTS
+      h1 A place for every account.
+      p Bring your Up accounts into Actual and keep transfers connected.
   if saved
     .alert.alert-success Saved.
 
@@ -58,13 +62,13 @@ block content
             | Off-budget accounts are tracked but not part of your budget, e.g. a child's pocket-money saver or a home loan.
             | Actual can't switch an account between on- and off-budget later, so choose here.
 
-  h2.h5 Existing links
+  h2.h5.section-heading Account connections
   form.mb-3(method='POST' action='/transfers/preview')
     button.btn.btn-sm.btn-outline-secondary(type='submit') Link existing transfers…
     span.form-text.ms-2 Turn transfers imported as two ordinary transactions into Actual transfers.
   p Choose which Actual account each Up account syncs into, or pick #[em ➕ Create new Actual account] to create one with its history from the 1st of this month (or since the Up account was opened, if later).
   each up in upAccounts
-    form.row.g-2.align-items-center.mb-3(method='POST' action='/link')
+    form.link-form.row.g-2.align-items-center.mb-3(method='POST' action='/link')
       input(type='hidden' name='account' value=up.id)
       .col-sm-4
         label.col-form-label(for='acc-' + up.id) #{up.displayName}

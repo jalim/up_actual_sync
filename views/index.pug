@@ -1,20 +1,95 @@
 extends layout
 
 block content
-  p.lead Sync transactions from Up Bank into Actual Budget.
-  p #{linkedCount} linked account#{linkedCount === 1 ? '' : 's'}.
-  button#sync.btn.btn-primary(type='button') Sync now
-  a.btn.btn-outline-primary.ms-2(href='/ofx') Import P&N OFX
-  #status.mt-3(role='status' aria-live='polite')
-    if lastSync
-      if lastSync.ok
-        .alert.alert-success
-          | Last sync #{lastSync.at}:
-          ul.mb-0
-            each r in lastSync.results
-              li #{r.name}: #{r.added} added, #{r.updated} updated#{r.transfers ? ', ' + r.transfers + ' transfers' : ''}#{r.errors.length ? ' (' + r.errors.join('; ') + ')' : ''}
-      else
-        .alert.alert-danger Last sync #{lastSync.at} failed: #{lastSync.error}
+  .page-heading
+    div
+      .eyebrow YOUR FINANCIAL CONNECTION
+      h1 Everything in sync.
+      p Keep your Up transactions flowing into Actual, with less busywork.
+    a.btn.btn-outline-primary(href='/link') Manage accounts ↗
+  .hero
+    .hero-copy
+      .badge-light CONNECTED BANKING, SIMPLIFIED
+      h2 Your bank and budget.#[br]On the same page.
+      p Bring everyday spending, savings and transfers together in Actual. You’re in control of when to sync.
+      button#sync.btn.btn-primary(type='button' disabled=!linkedCount)
+        +icon('sync')
+        span Sync now
+      if !linkedCount
+        a.hero-link(href='/link') Link your first account →
+    .connection-visual(aria-label='Up Bank to Actual Budget')
+      .bank-node.up-node up
+      .connection-line
+        span →
+      .bank-node.actual-node A
+      .visual-caption Up Bank #[span →] Actual Budget
+  .stats-grid
+    .stat-card
+      span.stat-label Linked accounts
+      strong= linkedCount
+      a(href='/link') Manage connections →
+    .stat-card
+      span.stat-label Last sync
+      strong.stat-word#last-sync-label= lastSync ? (lastSync.ok ? 'Completed' : 'Needs attention') : 'Not yet synced'
+      span.stat-detail#last-sync-time
+        if lastSync
+          time(datetime=lastSync.at)= lastSync.at
+        else
+          | Your next sync starts here
+    .stat-card
+      span.stat-label Automatic sync
+      strong.stat-word= cronEnabled ? 'Enabled' : 'Manual'
+      span.stat-detail= cronEnabled ? 'Schedule: ' + cronSchedule : 'Sync whenever you’re ready'
+  .dashboard-grid
+    section.panel
+      .panel-heading
+        div
+          .eyebrow THE LATEST
+          h2 Sync activity
+        span.pill Current session
+      #status(role='status' aria-live='polite' aria-busy='false')
+        if lastSync
+          if lastSync.ok
+            if lastSync.results.length
+              .activity-list
+                each r in lastSync.results
+                  .activity-row
+                    span.account-symbol ↗
+                    div
+                      strong= r.name
+                      p #{r.added} added · #{r.updated} updated#{r.transfers ? ' · ' + r.transfers + ' transfers' : ''}
+                      if r.errors.length
+                        p.text-danger= r.errors.join('; ')
+                    span.pill= r.errors.length ? 'Review' : 'Synced'
+            else
+              .empty-state No linked accounts were included in the last sync.
+          else
+            .alert.alert-danger= lastSync.error
+        else
+          .empty-state
+            span.empty-icon
+              +icon('sync')
+            h3 A fresh start for your budget
+            p Your latest sync results will appear here. Link your accounts, then run your first sync.
+            a.text-link(href=linkedCount ? '/setup' : '/link')= linkedCount ? 'Review connection settings →' : 'Connect your accounts →'
+    section.panel.quick-actions
+      .eyebrow MORE WAYS TO CONNECT
+      h2 Complete the picture.
+      a.action-card(href='/ofx')
+        span.action-icon
+          +icon('import')
+        div
+          h3 Import a statement
+          p Bring P&N OFX history into your budget.
+        span →
+      a.action-card(href='/link')
+        span.action-icon
+          +icon('link')
+        div
+          h3 Make the connection
+          p Link accounts and tidy up transfers.
+        span →
+      .note Automatic duplicate detection keeps repeat imports simple.
 
 block scripts
   script(src='/client.js')
