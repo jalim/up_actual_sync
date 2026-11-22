@@ -144,6 +144,7 @@ test('a deleted Up account is reported but does not stop the other accounts sync
   const r = results.find((x) => x.upAccountId === 'up-gone');
   assert.equal(r.name, 'Old saver');
   assert.match(r.errors[0], /no longer exists/);
+  assert.equal(r.goneFromUp, true);
 });
 
 test('other Up errors still fail the sync', async () => {

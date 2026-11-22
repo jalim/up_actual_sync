@@ -7,3 +7,4 @@ config.json
 test
 *.md
 .DS_Store
+last-sync.json*

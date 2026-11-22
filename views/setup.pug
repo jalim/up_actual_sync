@@ -3,11 +3,17 @@ extends layout
 block content
   .page-heading
     div
-      .eyebrow MAKE YOURSELF AT HOME
       h1 Connection settings
       p Connect Up Bank and your Actual budget. Saved credentials stay hidden.
+  if needsSetup
+    .alert.alert-info Connect Up Bank and your Actual budget first, then you can link accounts.
   if success
-    .alert.alert-success Saved. Up token and Actual budget verified.
+    .alert.alert-success.alert-action
+      span Saved. Up token and Actual budget verified.
+      if linkedCount
+        a.btn.btn-outline-secondary(href='/') Go to overview
+      else
+        a.btn.btn-primary(href='/link') Next: link your accounts →
   if error
     .alert.alert-danger= error
   form.settings-form(method='POST' action='/setup' autocomplete='off')

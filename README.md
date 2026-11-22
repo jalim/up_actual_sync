@@ -39,14 +39,14 @@ The budget is cached in `/home/node/app/budgets` (about 15 MB for a typical budg
 
 ## Web UI
 
-The responsive, Actual-inspired interface has four main screens:
+The interface has four screens, and follows your system's light or dark setting:
 
-- **Overview**: linked account count, last sync outcome, automatic-sync status and schedule, and the latest per-account results. **Sync now** updates activity in place; link an account to enable it.
-- **Accounts**: create or map Actual accounts, unlink stale connections, and preview repairs for existing transfers.
+- **Overview**: until the first sync, a getting-started checklist (connect, link accounts, sync). After that, the last sync's outcome, when it ran and whether it was manual or scheduled, the next automatic sync, linked-account count, and per-account results. **Sync now** updates the page in place.
+- **Accounts**: **Add Up accounts** creates new Actual accounts (with history and an opening balance) or links existing ones, in one step. An Actual account with the same name as an Up account is preselected. **Linked accounts** changes or removes links with a single **Save**; changed rows are highlighted. Stale links to deleted Up accounts and the transfer repair tool are here too.
 - **Statement imports**: upload P&N OFX/QFX exports, review accounts and balances, then confirm the import.
 - **Connection settings**: configure and verify Up and Actual credentials. Saved secrets are hidden; leave a secret field blank to keep its saved value.
 
-Sync activity covers the latest run in the current server session and resets when the service restarts. Automatic-sync settings come from the [configuration](#configuration); the dashboard displays them without changing them.
+The last sync result is saved to `last-sync.json` next to the config file (account names and counts only), so the overview survives restarts. Automatic-sync settings come from the [configuration](#configuration); the overview displays them without changing them.
 
 Styles and icons are served by the app, with no external stylesheet or font dependency.
 
@@ -126,7 +126,7 @@ If both are set, the API key is used. The budget's end-to-end encryption passwor
 The tool can't create the budget file itself: API keys belong to one budget, so the budget has to exist first.
 
 1. In Actual, create a new empty budget, then create an API key for it (see above).
-2. Enter the key and the budget's sync ID on **Setup**.
+2. Enter the key and the budget's sync ID on **Settings**.
 3. On **Link accounts**, under *Create Actual accounts from Up*, tick the Up accounts you want, choose an **Import history from** date (defaults to the 1st of this month), and select **Create and link**.
 
 When you open a new account in Up later, pick **➕ Create new Actual account** (or **➕ Create new off-budget account**) next to it on **Link accounts** and press **Save**. History starts from the 1st of this month, or from the day the Up account was opened if that's later. A brand-new account therefore starts at $0 with all its transactions.

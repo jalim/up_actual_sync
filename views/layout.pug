@@ -11,42 +11,40 @@ mixin icon(name)
       path(d='M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5')
     else if name === 'sync'
       path(d='M20 7a9 9 0 0 0-15-2L3 7m0-5v5h5M4 17a9 9 0 0 0 15 2l2-2m0 5v-5h-5')
+    else if name === 'check'
+      path(d='m5 12 5 5 9-10')
     else
       circle(cx='12' cy='12' r='4')
       path(d='M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2')
+
+mixin syncButton(disabled)
+  button#sync.btn.btn-primary(type='button' disabled=disabled)
+    +icon('sync')
+    span Sync now
+
 doctype html
 html(lang='en')
   head
     meta(charset='utf-8')
     meta(name='viewport' content='width=device-width, initial-scale=1')
-    meta(name='theme-color' content='#f6f5fa')
+    meta(name='color-scheme' content='light dark')
+    meta(name='theme-color' content='#f6f5fa' media='(prefers-color-scheme: light)')
+    meta(name='theme-color' content='#17151f' media='(prefers-color-scheme: dark)')
     title #{title ? title + ' · ' : ''}Up Actual Sync
     link(rel='stylesheet' href='/styles.css')
   body
     a.skip-link(href='#main') Skip to content
     aside.sidebar
-      a.brand(href='/' aria-label='Up Actual Sync home')
-        span.brand-mark A
-        span Actual
-          small UP BANK SYNC
-      .nav-label WORKSPACE
+      a.brand(href='/')
+        span.brand-mark
+          +icon('sync')
+        span.brand-name Up Actual Sync
       nav(aria-label='Main navigation')
-        each item in [{path:'/', label:'Overview', icon:'overview'}, {path:'/link', label:'Accounts', icon:'link'}, {path:'/ofx', label:'Statement imports', icon:'import'}, {path:'/setup', label:'Connection settings', icon:'settings'}]
+        each item in [{path:'/', label:'Overview', icon:'overview'}, {path:'/link', label:'Accounts', icon:'link'}, {path:'/ofx', label:'Statements', icon:'import'}, {path:'/setup', label:'Settings', icon:'settings'}]
           a.nav-item(href=item.path class=activePath === item.path ? 'active' : '' aria-current=activePath === item.path ? 'page' : undefined)
             +icon(item.icon)
             span= item.label
-      .sidebar-bottom
-        .connection-note
-          span.status-dot
-          span Your money. Your budget.
-        p A little connection.#[br]A clearer financial picture.
-    .workspace
-      header.topbar
-        span.workspace-name Personal workspace
-        span.topbar-tag Up → Actual
-      main#main.container
-        block content
-      footer.footer
-        span Up Actual Sync
-        span Made for a more complete picture.
+      p.sidebar-note Syncs Up Bank transactions into Actual Budget. Not affiliated with Up or Actual.
+    main#main.container
+      block content
     block scripts

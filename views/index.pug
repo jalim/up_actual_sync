@@ -1,95 +1,116 @@
 extends layout
 
+mixin activityRow(r)
+  .activity-row
+    span.row-state(class=r.errors && r.errors.length ? 'is-warning' : 'is-ok' aria-hidden='true')
+    div
+      strong= r.name
+      p #{r.added} added · #{r.updated} updated#{r.transfers ? ' · ' + r.transfers + ' transfers' : ''}
+      if r.errors && r.errors.length
+        p.text-danger= r.errors.join('; ')
+    span.pill(class=r.errors && r.errors.length ? 'pill-warning' : '')= r.errors && r.errors.length ? 'Review' : 'Synced'
+
 block content
   .page-heading
     div
-      .eyebrow YOUR FINANCIAL CONNECTION
-      h1 Everything in sync.
-      p Keep your Up transactions flowing into Actual, with less busywork.
-    a.btn.btn-outline-primary(href='/link') Manage accounts ↗
-  .hero
-    .hero-copy
-      .badge-light CONNECTED BANKING, SIMPLIFIED
-      h2 Your bank and budget.#[br]On the same page.
-      p Bring everyday spending, savings and transfers together in Actual. You’re in control of when to sync.
-      button#sync.btn.btn-primary(type='button' disabled=!linkedCount)
-        +icon('sync')
-        span Sync now
-      if !linkedCount
-        a.hero-link(href='/link') Link your first account →
-    .connection-visual(aria-label='Up Bank to Actual Budget')
-      .bank-node.up-node up
-      .connection-line
-        span →
-      .bank-node.actual-node A
-      .visual-caption Up Bank #[span →] Actual Budget
-  .stats-grid
+      h1 Overview
+      p Up Bank transactions, synced into your Actual budget.
+
+  if steps
+    section.panel.onboarding(data-reload-after-sync)
+      h2 Get started
+      ol.steps
+        each step, i in steps
+          li(class=step.done ? 'is-done' : '')
+            span.step-marker
+              if step.done
+                +icon('check')
+              else
+                = i + 1
+            if step.href && !step.done && steps.slice(0, i).every((prev) => prev.done)
+              a(href=step.href)= step.label
+            else
+              span= step.label
+      +syncButton(!configured || !linkedCount)
+      #status.mt-3(role='status' aria-live='polite' aria-busy='false')
+  else
+    section.sync-bar
+      span.state-dot#sync-state(class='is-' + syncState aria-hidden='true')
+      div
+        strong#last-sync-label= syncLabel
+        p
+          span#last-sync-time
+            time(datetime=lastSync.at)= lastSync.at
+          if lastSync.trigger
+            |  · #{lastSync.trigger === 'schedule' ? 'scheduled' : 'manual'}
+      +syncButton(false)
+
+  .stats-grid(hidden=!!steps)
     .stat-card
       span.stat-label Linked accounts
       strong= linkedCount
-      a(href='/link') Manage connections →
+      if staleCount
+        a.stat-alert(href='/link') #{staleCount} no longer in Up. Review →
+      else
+        a(href='/link') Manage accounts →
     .stat-card
       span.stat-label Last sync
-      strong.stat-word#last-sync-label= lastSync ? (lastSync.ok ? 'Completed' : 'Needs attention') : 'Not yet synced'
-      span.stat-detail#last-sync-time
-        if lastSync
-          time(datetime=lastSync.at)= lastSync.at
-        else
-          | Your next sync starts here
+      strong#stat-added= added
+      span.stat-detail#stat-detail transactions added · #{updated} updated
     .stat-card
       span.stat-label Automatic sync
-      strong.stat-word= cronEnabled ? 'Enabled' : 'Manual'
-      span.stat-detail= cronEnabled ? 'Schedule: ' + cronSchedule : 'Sync whenever you’re ready'
+      strong.stat-word= cronEnabled ? (scheduleText || 'On') : 'Off'
+      span.stat-detail
+        if !cronEnabled
+          | Turn on with the cronEnabled setting
+        else if nextRun
+          | Next: #[time(datetime=nextRun) #{nextRun}]
+        else
+          | Schedule: #{cronSchedule}
+
   .dashboard-grid
     section.panel
       .panel-heading
-        div
-          .eyebrow THE LATEST
-          h2 Sync activity
-        span.pill Current session
-      #status(role='status' aria-live='polite' aria-busy='false')
-        if lastSync
+        h2 Sync activity
+        if lastSync && lastSync.trigger
+          span.pill#activity-trigger= lastSync.trigger === 'schedule' ? 'Scheduled sync' : 'Manual sync'
+      if !steps
+        #status(role='status' aria-live='polite' aria-busy='false')
           if lastSync.ok
             if lastSync.results.length
               .activity-list
                 each r in lastSync.results
-                  .activity-row
-                    span.account-symbol ↗
-                    div
-                      strong= r.name
-                      p #{r.added} added · #{r.updated} updated#{r.transfers ? ' · ' + r.transfers + ' transfers' : ''}
-                      if r.errors.length
-                        p.text-danger= r.errors.join('; ')
-                    span.pill= r.errors.length ? 'Review' : 'Synced'
+                  +activityRow(r)
             else
               .empty-state No linked accounts were included in the last sync.
           else
             .alert.alert-danger= lastSync.error
-        else
-          .empty-state
-            span.empty-icon
-              +icon('sync')
-            h3 A fresh start for your budget
-            p Your latest sync results will appear here. Link your accounts, then run your first sync.
-            a.text-link(href=linkedCount ? '/setup' : '/link')= linkedCount ? 'Review connection settings →' : 'Connect your accounts →'
+      else
+        .empty-state
+          p Results from each sync show up here, account by account.
     section.panel.quick-actions
-      .eyebrow MORE WAYS TO CONNECT
-      h2 Complete the picture.
+      h2 More tools
       a.action-card(href='/ofx')
         span.action-icon
           +icon('import')
         div
           h3 Import a statement
-          p Bring P&N OFX history into your budget.
-        span →
+          p Add P&N bank history from OFX files.
+        span(aria-hidden='true') →
       a.action-card(href='/link')
         span.action-icon
           +icon('link')
         div
-          h3 Make the connection
+          h3 Manage accounts
           p Link accounts and tidy up transfers.
-        span →
-      .note Automatic duplicate detection keeps repeat imports simple.
+        span(aria-hidden='true') →
+      a.action-card(href='/setup')
+        span.action-icon
+          +icon('settings')
+        div
+          h3 Connection settings
+          p Up token and Actual server details.
+        span(aria-hidden='true') →
 
 block scripts
   script(src='/client.js')

@@ -1,27 +1,38 @@
 extends layout
 
 block content
-  .eyebrow CONNECTION COMPLETE
-  h1 Accounts created
-  p Created and linked #{created.length} account#{created.length === 1 ? '' : 's'}, with history from #{startDate}.
-  table.table
-    thead
-      tr
-        th Account
-        th.text-end Opening balance
-        th Opening date
-        th.text-end Transactions
-        th.text-end Transfers
-    tbody
-      each c in created
+  .page-heading
+    div
+      h1 Accounts created
+      p
+        | Created and linked #{created.length} account#{created.length === 1 ? '' : 's'}, with history from #{startDate}.
+        if linkedExisting
+          |  Also linked #{linkedExisting} existing account#{linkedExisting === 1 ? '' : 's'}.
+  .table-wrap
+    table.table
+      thead
         tr
-          td #{c.name}#{c.offbudget ? ' (off-budget)' : ''}
-          td.text-end= (c.openingBalance / 100).toFixed(2)
-          td= c.openingDate
-          td.text-end= c.imported
-          td.text-end= c.transfers
-        if c.warnings.length
+          th Account
+          th.text-end Opening balance
+          th Opening date
+          th.text-end Transactions
+          th.text-end Transfers
+      tbody
+        each c in created
           tr
-            td.text-danger(colspan=5) ⚠ #{c.warnings.join('; ')}
+            td #{c.name}#{c.offbudget ? ' (off-budget)' : ''}
+            td.text-end= (c.openingBalance / 100).toFixed(2)
+            td= c.openingDate
+            td.text-end= c.imported
+            td.text-end= c.transfers
+          if c.warnings.length
+            tr
+              td.text-danger(colspan=5) ⚠ #{c.warnings.join('; ')}
   p.text-body-secondary Transfers and round-ups between accounts created together are linked as Actual transfers. Transfers to accounts that were already linked are imported as ordinary transactions for this history; new ones from now on are linked as transfers.
-  a.btn.btn-primary(href='/link') Back to linking
+  .form-actions
+    +syncButton(false)
+    a.btn.btn-outline-secondary(href='/link') Back to accounts
+  #status.mt-3(role='status' aria-live='polite' aria-busy='false')
+
+block scripts
+  script(src='/client.js')

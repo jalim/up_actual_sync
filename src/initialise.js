@@ -150,8 +150,9 @@ async function createAccounts({
       w.actualAccountId = await api.createAccount({ name: w.name, offbudget: w.offbudget }, w.openingBalance);
       w.openingDate = openingBalanceDate(startDate, w.openingBalance, w.transactions);
       if (w.openingBalance !== 0) {
-        // createAccount dates the starting balance today; move it back.
-        const [starting] = await api.getTransactions(w.actualAccountId, '1970-01-01', today);
+        // createAccount dates the starting balance with the real clock (which
+        // can differ from `today`); it is the account's only transaction here.
+        const [starting] = await api.getTransactions(w.actualAccountId, '1970-01-01', '9999-12-31');
         if (starting) await api.updateTransaction(starting.id, { date: w.openingDate });
       }
     }

@@ -1,7 +1,6 @@
 extends layout
 
 block content
-  .eyebrow LET’S GET BACK ON TRACK
   h1 Something went wrong
   .alert.alert-danger= message
-  a.btn.btn-secondary(href='/') Back
+  a.btn.btn-outline-secondary(href=backPath) Back to #{title || 'overview'}

@@ -3,25 +3,25 @@ extends layout
 block content
   .page-heading
     div
-      .eyebrow STATEMENT IMPORTS
-      h1 More history. One budget.
-      p Bring your P&N accounts into the picture.
-  p Upload one or more OFX exports. Statements you've imported before are recognised automatically, and only new transactions are added. Overlapping exports are fine.
-  .alert.alert-info
-    | First time for an account? Start with the oldest history you want to keep. To add to an Actual account that already has history, select it and choose the date to import from. Loans usually belong off-budget, and money owed should be negative.
+      h1 Statement imports
+      p Add P&N bank history from OFX exports. You'll review every account before anything is imported.
   form#ofx-upload.upload-zone
-    +icon('import')
-    h2 Start with your statements
-    p Choose your OFX or QFX exports. You’ll review accounts and balances before importing.
-    label.form-label(for='ofx-files') OFX files (up to 10 files, 5 MB each; 8 MB total)
+    label.form-label(for='ofx-files') OFX or QFX files
     input#ofx-files.form-control(type='file' accept='.ofx,.qfx' multiple required)
-    button.btn.btn-primary.mt-3(type='submit') Preview files
+    p.form-text Up to 10 files, 5 MB each and 8 MB in total. Overlapping exports are fine.
+    button.btn.btn-primary.mt-2(type='submit') Preview files
+  details.help
+    summary How imports work
+    ul
+      li Statements you've imported before are recognised automatically, and only new transactions are added.
+      li First time for an account? Start with the oldest history you want to keep. To add to an Actual account that already has history, select it and choose the date to import from.
+      li Loans usually belong off-budget, and money owed should be negative.
+      li Existing accounts keep their opening balance and budget status. New accounts get an opening balance calculated from the statement.
+      li Transfers are matched using shared P&N references. For Up transfers, choose any linked Up account or limit matching to one account. Only unique matches with a bank-identifying description are linked automatically; others remain for review. Future Up syncs also check for matches.
   #ofx-status.mt-3(role='status' aria-live='polite')
   form#ofx-confirm.mt-4(hidden)
     #ofx-accounts
-    p Matching uses shared P&N references. For Up transfers, choose any linked Up account or limit matching to one account. Only unique matches with a bank-identifying description are linked automatically; others remain for review. Existing linked transfers are reused. Future Up syncs also check for matches.
-    p Existing accounts keep their opening balance and budget status. New accounts get an opening balance calculated from the statement.
-    button#ofx-import.btn.btn-success(type='submit') Import
+    button#ofx-import.btn.btn-primary(type='submit') Import
   #ofx-result.mt-4
 
 block scripts
