@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.3.0
+
+### Changed
+
+- **Rebuilt the web UI** with a violet theme, persistent navigation, light and dark modes, and responsive layouts across every page. The app is branded as Up Actual Sync, without Up or Actual logos, and notes it isn't affiliated with either.
+- **Overview**: a getting-started checklist until the first sync, then a compact status bar with **Sync now**, the last sync's outcome and trigger (manual or scheduled), and the next automatic sync. Common schedules are described in words (e.g. "Every 4 hours").
+- **The last sync result survives restarts**, saved as `last-sync.json` next to the config file (names and counts only).
+- **Accounts**: one **Add Up accounts** form creates new Actual accounts or links existing ones (same-name accounts are preselected), and linked accounts are changed with a single **Save** that highlights unsaved rows. This replaces the separate create table and per-account Save buttons.
+- **Next steps** after each action: saving settings leads to Accounts, saving links or creating accounts offers **Sync now**, and error pages return to the page you came from.
+- **Statement imports** puts the upload first, with instructions in a collapsible "How imports work" section.
+- Styles and SVG icons are served locally, replacing the Bootstrap CDN stylesheet. The UI remains server-rendered with Express/Pug and needs no frontend build step.
+
+### Fixed
+
+- Clicking **Sync now** while the scheduled sync is running no longer reports a failure; it says a sync is already running.
+- The last-sync card shows **Completed with issues** when any account reported errors.
+- The linked-account count leaves out links the last sync found deleted in Up, and flags them for review.
+- A new install is pointed to Connection settings first; the Accounts page redirects there until Up and Actual are configured, instead of showing an Up error.
+- Removed a small horizontal scroll on phones caused by the navigation.
+
 ## 1.2.1
 
 ### Changed

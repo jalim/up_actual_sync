@@ -1,9 +1,23 @@
 extends layout
 
+mixin upName(up)
+  strong= up.displayName
+  small.text-body-secondary #{up.accountType.toLowerCase().replace('_', ' ')}#{up.ownershipType === 'JOINT' ? ' · 2Up' : ''}
+
 block content
-  h1.h3 Link accounts
-  if saved
-    .alert.alert-success Saved.
+  .page-heading
+    div
+      h1 Accounts
+      p Choose which Actual account each Up account syncs into.
+
+  if saved !== undefined
+    if saved === '0'
+      .alert.alert-info No changes to save.
+    else
+      .alert.alert-success.alert-action
+        span Saved #{saved} change#{saved === '1' ? '' : 's'}. Sync now to bring in any new transactions.
+        +syncButton(false)
+      #status(role='status' aria-live='polite' aria-busy='false')
 
   if staleLinks.length
     .alert.alert-warning
@@ -11,11 +25,12 @@ block content
       p.mb-2
         | These links point to Up accounts that have been deleted, so they are skipped when syncing.
         | Unlink them, then close the Actual account in Actual if you no longer need it.
-      p.mb-2
-        | When Up deletes a saver it moves any leftover balance to another account as an ordinary deposit, and that
-        | deposit gets imported. Before closing the Actual account, change that deposit's payee to a transfer from the
-        | old account so its balance becomes $0. Don't let Actual transfer the balance again when closing, or it
-        | will be counted twice.
+      details
+        summary Before closing the Actual account
+        p
+          | When Up deletes a saver it moves any leftover balance to another account as an ordinary deposit, and that
+          | deposit gets imported. Change that deposit's payee to a transfer from the old account so its balance
+          | becomes $0. Don't let Actual transfer the balance again when closing, or it will be counted twice.
       each s in staleLinks
         form.d-flex.align-items-center.gap-2.mb-1(method='POST' action='/link')
           input(type='hidden' name='account' value=s.upId)
@@ -23,58 +38,78 @@ block content
           span Actual account: #[strong= s.actualName]
           button.btn.btn-sm.btn-outline-danger(type='submit') Unlink
 
-  - const unlinked = upAccounts.filter((u) => !linkedAccounts[u.id])
   if unlinked.length
-    .card.mb-4
-      .card-body
-        h2.h5.card-title Create Actual accounts from Up
-        p.card-text.text-body-secondary
-          | Creates a new Actual account for each selected Up account, imports every transaction from the start date,
-          | and sets an opening balance so the Actual balance matches Up today.
-        form(method='POST' action='/accounts/create')
-          table.table.table-sm.align-middle.mb-2
+    section.panel.mb-4
+      h2 Add Up accounts
+      p.text-body-secondary
+        | Create a new Actual account (with its history and an opening balance that matches Up today),
+        | or link one you already have in Actual.
+      form#add-form(method='POST' action='/accounts/add')
+        .table-wrap
+          table.table.accounts-table
             thead
               tr
-                th Create
                 th Up account
-                th.text-center Off budget
+                th Add as
             tbody
               each up in unlinked
                 tr
                   td
-                    input.form-check-input(type='checkbox' name='upAccountIds' value=up.id id='create-' + up.id checked)
+                    label(for='choice-' + up.id)
+                      +upName(up)
                   td
-                    label(for='create-' + up.id) #{up.displayName}
-                      small.text-body-secondary  (#{up.accountType}#{up.ownershipType === 'JOINT' ? ', 2Up' : ''})
-                  td.text-center
-                    input.form-check-input(type='checkbox' name='offBudgetIds' value=up.id aria-label='Off budget: ' + up.displayName checked=up.accountType === 'HOME_LOAN')
-          .row.g-2.align-items-end.mt-2
+                    select.form-select(name='choice:' + up.id id='choice-' + up.id)
+                      option(value='' selected=up.suggested === '') Don't add
+                      option(value=CREATE selected=up.suggested === CREATE) New account
+                      option(value=CREATE_OFF_BUDGET selected=up.suggested === CREATE_OFF_BUDGET) New off-budget account
+                      if actualAccounts.length
+                        optgroup(label='Link to an existing Actual account')
+                          each acc in actualAccounts
+                            option(value=acc.id selected=up.suggested === acc.id)= acc.name
+        #create-options
+          .row.g-2.align-items-end
             .col-sm-4
               label.form-label(for='startDate') Import history from
-              input#startDate.form-control(type='date' name='startDate' required value=defaultStartDate)
-            .col-sm-4
-              button.btn.btn-primary(type='submit') Create and link
-          .form-text.mt-2
+              input#startDate.form-control(type='date' name='startDate' value=defaultStartDate)
+          p.form-text
             | Off-budget accounts are tracked but not part of your budget, e.g. a child's pocket-money saver or a home loan.
             | Actual can't switch an account between on- and off-budget later, so choose here.
+        button#add-submit.btn.btn-primary(type='submit') Add accounts
 
-  h2.h5 Existing links
-  form.mb-3(method='POST' action='/transfers/preview')
-    button.btn.btn-sm.btn-outline-secondary(type='submit') Link existing transfers…
-    span.form-text.ms-2 Turn transfers imported as two ordinary transactions into Actual transfers.
-  p Choose which Actual account each Up account syncs into, or pick #[em ➕ Create new Actual account] to create one with its history from the 1st of this month (or since the Up account was opened, if later).
-  each up in upAccounts
-    form.row.g-2.align-items-center.mb-3(method='POST' action='/link')
-      input(type='hidden' name='account' value=up.id)
-      .col-sm-4
-        label.col-form-label(for='acc-' + up.id) #{up.displayName}
-          small.text-body-secondary  (#{up.accountType})
-      .col-sm-6
-        select.form-select(name='accID' id='acc-' + up.id)
-          option(value='') Not linked
-          option(value=createNew) ➕ Create new Actual account
-          option(value=createNewOffBudget) ➕ Create new off-budget account
-          each acc in actualAccounts
-            option(value=acc.id selected=linkedAccounts[up.id] === acc.id)= acc.name
-      .col-sm-2
-        button.btn.btn-outline-primary.w-100(type='submit') Save
+  if linked.length
+    section.panel
+      h2 Linked accounts
+      form#links-form(method='POST' action='/link')
+        .table-wrap
+          table.table.accounts-table
+            thead
+              tr
+                th Up account
+                th Syncs into
+            tbody
+              each up in linked
+                tr
+                  td
+                    label(for='link-' + up.id)
+                      +upName(up)
+                  td
+                    select.form-select(name='link:' + up.id id='link-' + up.id data-initial=up.linkedTo)
+                      option(value='') Not linked
+                      each acc in actualAccounts
+                        option(value=acc.id selected=up.linkedTo === acc.id)= acc.name
+        .form-actions
+          button#links-submit.btn.btn-primary(type='submit') Save changes
+          span.form-text#links-dirty(aria-live='polite')
+      .tool-row
+        div
+          h3 Link existing transfers
+          p.form-text Turn transfers that were imported as two ordinary transactions into Actual transfers. You'll see a preview first.
+        form(method='POST' action='/transfers/preview')
+          button.btn.btn-outline-secondary(type='submit') Find transfers…
+
+  if !linked.length && !unlinked.length
+    .empty-state No Up accounts found for this token.
+
+block scripts
+  script(src='/link.js')
+  script(src='/client.js')

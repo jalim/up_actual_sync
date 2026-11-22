@@ -29,17 +29,30 @@ docker run -d --name up-actual-sync \
 
 Then open `http://localhost:3000`:
 
-1. **Setup**: enter your Up token, Actual server URL, an Actual API key or server password (see [Actual authentication](#actual-authentication)), budget sync ID (Actual → Settings → Advanced → Sync ID), and the end-to-end encryption password if your budget is encrypted. Saving verifies both connections.
-2. **Link accounts**: either let the tool create Actual accounts for your Up accounts (see [Starting a new budget](#starting-a-new-budget)), or pick an existing Actual account for each Up account.
+1. **Connection settings**: enter your Up token, Actual server URL, an Actual API key or server password (see [Actual authentication](#actual-authentication)), budget sync ID (Actual → Settings → Advanced → Sync ID), and the end-to-end encryption password if your budget is encrypted. Saving verifies both connections.
+2. **Accounts**: either let the tool create Actual accounts for your Up accounts (see [Starting a new budget](#starting-a-new-budget)), or pick an existing Actual account for each Up account.
 3. **Sync now**, or wait for the schedule.
 
 The container runs as uid 1000 (`node`), so the mounted config directory must be writable by that user (`sudo chown 1000:1000 ./config`).
 
 The budget is cached in `/home/node/app/budgets` (about 15 MB for a typical budget), so each sync only pulls recent changes. Add `-v ./budgets:/home/node/app/budgets` (also writable by uid 1000) to keep the cache across container restarts. Without it, the first sync after a restart downloads the whole budget again. In Kubernetes an `emptyDir` is fine.
 
+## Web UI
+
+The interface has four screens, and follows your system's light or dark setting:
+
+- **Overview**: until the first sync, a getting-started checklist (connect, link accounts, sync). After that, the last sync's outcome, when it ran and whether it was manual or scheduled, the next automatic sync, linked-account count, and per-account results. **Sync now** updates the page in place.
+- **Accounts**: **Add Up accounts** creates new Actual accounts (with history and an opening balance) or links existing ones, in one step. An Actual account with the same name as an Up account is preselected. **Linked accounts** changes or removes links with a single **Save**; changed rows are highlighted. Stale links to deleted Up accounts and the transfer repair tool are here too.
+- **Statement imports**: upload P&N OFX/QFX exports, review accounts and balances, then confirm the import.
+- **Connection settings**: configure and verify Up and Actual credentials. Saved secrets are hidden; leave a secret field blank to keep its saved value.
+
+The last sync result is saved to `last-sync.json` next to the config file (account names and counts only), so the overview survives restarts. Automatic-sync settings come from the [configuration](#configuration); the overview displays them without changing them.
+
+Styles and icons are served by the app, with no external stylesheet or font dependency.
+
 ## P&N OFX imports
 
-Open **Import OFX** in the web UI, select your P&N exports, then choose **Preview files**. You can upload several accounts and overlapping exports together. Nothing changes in Actual until you choose **Import**.
+Open **Statement imports** in the web UI, select your P&N exports, then choose **Preview files**. You can upload several accounts and overlapping exports together. Nothing changes in Actual until you choose **Import**.
 
 Statements you've imported before are recognised automatically. The preview shows how many transactions are new and how many are already in Actual, and the import adds only the new ones. For routine top-ups, just upload the latest export and import.
 
@@ -113,7 +126,7 @@ If both are set, the API key is used. The budget's end-to-end encryption passwor
 The tool can't create the budget file itself: API keys belong to one budget, so the budget has to exist first.
 
 1. In Actual, create a new empty budget, then create an API key for it (see above).
-2. Enter the key and the budget's sync ID on **Setup**.
+2. Enter the key and the budget's sync ID on **Settings**.
 3. On **Link accounts**, under *Create Actual accounts from Up*, tick the Up accounts you want, choose an **Import history from** date (defaults to the 1st of this month), and select **Create and link**.
 
 When you open a new account in Up later, pick **➕ Create new Actual account** (or **➕ Create new off-budget account**) next to it on **Link accounts** and press **Save**. History starts from the 1st of this month, or from the day the Up account was opened if that's later. A brand-new account therefore starts at $0 with all its transactions.
@@ -197,8 +210,14 @@ Code layout:
 - `src/categories.js`: Up category mirroring and transfer categories
 - `src/initialise.js`: creating Actual accounts from Up with opening balances
 - `src/repair.js`: the "Link existing transfers" action
-- `src/server.js`: Express routes
+- `src/server.js`: Express routes and shared navigation/page-title data
+- `views/`: Pug templates; `layout.pug` provides the navigation, shared shell, and SVG icon mixin
+- `public/styles.css`: shared theme, components, responsive layouts, and reduced-motion support
+- `public/client.js`: manual-sync interaction, per-account activity rendering, and local date formatting
+- `public/ofx.js`: statement preview and import interactions
 - `src/ofx.js`: OFX parsing and stable P&N transaction identities
 - `src/ofxImport.js`: statement imports, opening balances and transfer matching
+
+The UI uses the existing Express/Pug stack and plain CSS/JavaScript; no frontend build step is required. When changing templates or styles, check desktop and narrow layouts, keyboard focus, empty/error states, and sync/import feedback.
 
 Tests run against a real in-process Actual engine (`test/helpers/localBudget.js`), not mocks, wherever Actual's behaviour matters.

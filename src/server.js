@@ -11,10 +11,13 @@ const initialise = require('./initialise');
 const repair = require('./repair');
 const ofx = require('./ofx');
 const ofxImport = require('./ofxImport');
+const { describeSchedule } = require('./schedule');
 
-// Sentinel values for the link page's "create new Actual account" options.
-const CREATE_NEW = '__create__';
-const CREATE_NEW_OFF_BUDGET = '__create_off_budget__';
+// Choices on the Accounts page for an Up account that isn't linked yet.
+const CREATE = 'create';
+const CREATE_OFF_BUDGET = 'create-offbudget';
+
+const PAGE_TITLES = { '/': 'Overview', '/link': 'Accounts', '/setup': 'Connection settings', '/ofx': 'Statement imports' };
 
 function safeEqual(a, b) {
   const ha = crypto.createHash('sha256').update(String(a)).digest();
@@ -31,6 +34,28 @@ function staleLinks(linkedAccounts, upAccounts, actualAccounts) {
       const acc = actualAccounts.find((a) => a.id === actualId);
       return { upId, actualName: acc ? `${acc.name}${acc.closed ? ' (closed)' : ''}` : '(not in Actual)' };
     });
+}
+
+/** Preselect an unused Actual account with the same name; on first setup, otherwise create one. */
+function suggestedChoice(upAccount, actualAccounts, used, firstSetup) {
+  const name = upAccount.displayName.trim().toLowerCase();
+  const match = actualAccounts.find((a) => !used.has(a.id) && a.name.trim().toLowerCase() === name);
+  if (match) return match.id;
+  if (!firstSetup) return '';
+  return upAccount.accountType === 'HOME_LOAN' ? CREATE_OFF_BUDGET : CREATE;
+}
+
+function syncState(lastSync) {
+  if (!lastSync) return 'idle';
+  if (!lastSync.ok) return 'error';
+  return lastSync.results.some((r) => r.errors?.length) ? 'warning' : 'ok';
+}
+
+/** Overview label for the last sync, including per-account errors. */
+function syncLabel(lastSync) {
+  if (!lastSync) return 'Not yet synced';
+  if (!lastSync.ok) return 'Needs attention';
+  return lastSync.results.some((r) => r.errors?.length) ? 'Completed with issues' : 'Completed';
 }
 
 function basicAuth(username, password) {
@@ -78,6 +103,7 @@ function createApp({
   settings,
   runSync,
   getLastSync,
+  getNextRun = () => null,
   upClient = upBank,
   createAccounts = initialise.createAccounts,
   linkTransfers = repair.linkExistingTransfers,
@@ -98,6 +124,16 @@ function createApp({
   app.use(sameOrigin);
   app.use(express.json({ limit: '12mb' }));
   app.use(express.static(path.join(__dirname, '..', 'public')));
+
+  app.use((req, res, next) => {
+    const accountPage = req.path.startsWith('/transfers') || req.path.startsWith('/accounts');
+    const page = accountPage ? '/link' : req.path;
+    res.locals.activePath = page;
+    res.locals.title = PAGE_TITLES[page];
+    // Where an error page's "Back" button goes.
+    res.locals.backPath = PAGE_TITLES[page] ? page : '/';
+    next();
+  });
 
   app.get('/healthz', (req, res) => res.json({ ok: true }));
 
@@ -199,9 +235,33 @@ function createApp({
   });
 
   app.get('/', (req, res) => {
+    const lastSync = getLastSync();
+    const links = Object.entries(config.getLinkedAccounts(store)).filter(([, actualId]) => actualId);
+    // The overview doesn't call Up; the last sync says which links point at deleted Up accounts.
+    const gone = new Set((lastSync?.results || []).filter((r) => r.goneFromUp).map((r) => r.upAccountId));
+    const staleCount = links.filter(([upId]) => gone.has(upId)).length;
+    const configured = isConfigured();
+    const linkedCount = links.length - staleCount;
+    const results = lastSync?.ok ? lastSync.results : [];
     res.render('index', {
-      lastSync: getLastSync(),
-      linkedCount: Object.keys(config.getLinkedAccounts(store)).length,
+      lastSync,
+      syncLabel: syncLabel(lastSync),
+      syncState: syncState(lastSync),
+      added: results.reduce((n, r) => n + (r.added || 0), 0),
+      updated: results.reduce((n, r) => n + (r.updated || 0), 0),
+      cronEnabled: settings.cronEnabled,
+      cronSchedule: settings.cronSchedule,
+      scheduleText: describeSchedule(settings.cronSchedule),
+      nextRun: settings.cronEnabled ? getNextRun() : null,
+      configured,
+      linkedCount,
+      staleCount,
+      // Getting started checklist, shown until the first sync has run.
+      steps: lastSync && configured && linkedCount ? null : [
+        { label: 'Connect Up and Actual', href: '/setup', done: configured },
+        { label: 'Link your Up accounts', href: '/link', done: configured && linkedCount > 0 },
+        { label: 'Run your first sync', done: !!lastSync?.ok },
+      ],
     });
   });
 
@@ -218,8 +278,13 @@ function createApp({
     };
   }
 
+  function isConfigured() {
+    const actual = config.getActual(store);
+    return !!(config.getUpToken(store) && actual.serverUrl && actual.budgetId && (actual.apiKey || actual.serverPassword));
+  }
+
   app.get('/setup', (req, res) => {
-    res.render('setup', setupView());
+    res.render('setup', setupView({ needsSetup: req.query.next === 'link' && !isConfigured() }));
   });
 
   app.post('/setup', async (req, res) => {
@@ -260,30 +325,36 @@ function createApp({
     store.set('UP:token', token);
     store.set('actual', actual);
     await config.save(store);
-    res.render('setup', setupView({ success: true }));
+    res.render('setup', setupView({ success: true, linkedCount: Object.keys(config.getLinkedAccounts(store)).length }));
   });
 
   app.get('/link', async (req, res) => {
+    if (!isConfigured()) return res.redirect('/setup?next=link');
     const token = config.getUpToken(store);
     const actual = config.getActual(store);
     const upAccounts = await upClient.getAccounts(token);
     const actualAccounts = await withBudget(actual, settings.dataDir, (api) => api.getAccounts());
+    const linkedAccounts = config.getLinkedAccounts(store);
+    const open = actualAccounts.filter((a) => !a.closed).sort((a, b) => a.name.localeCompare(b.name));
+    const used = new Set(Object.values(linkedAccounts));
+    const accounts = upAccounts.map((a) => ({
+      id: a.id,
+      displayName: a.attributes.displayName,
+      accountType: a.attributes.accountType,
+      ownershipType: a.attributes.ownershipType,
+      linkedTo: linkedAccounts[a.id] || '',
+    }));
     res.render('link', {
-      upAccounts: upAccounts.map((a) => ({
-        id: a.id,
-        displayName: a.attributes.displayName,
-        accountType: a.attributes.accountType,
-        ownershipType: a.attributes.ownershipType,
-      })),
-      actualAccounts: actualAccounts
-        .filter((a) => !a.closed)
-        .sort((a, b) => a.name.localeCompare(b.name)),
-      linkedAccounts: config.getLinkedAccounts(store),
-      staleLinks: staleLinks(config.getLinkedAccounts(store), upAccounts, actualAccounts),
-      saved: req.query.saved === '1',
+      linked: accounts.filter((a) => a.linkedTo),
+      // On first setup every Up account defaults to "create"; later, unlinked
+      // accounts are usually unlinked on purpose, so only a name match is preselected.
+      unlinked: accounts.filter((a) => !a.linkedTo).map((a) => ({ ...a, suggested: suggestedChoice(a, open, used, !used.size) })),
+      actualAccounts: open,
+      staleLinks: staleLinks(linkedAccounts, upAccounts, actualAccounts),
+      saved: /^\d+$/.test(req.query.saved || '') ? req.query.saved : undefined,
       defaultStartDate: initialise.defaultStartDate(),
-      createNew: CREATE_NEW,
-      createNewOffBudget: CREATE_NEW_OFF_BUDGET,
+      CREATE,
+      CREATE_OFF_BUDGET,
     });
   });
 
@@ -312,7 +383,7 @@ function createApp({
     return transfers(req, res, false);
   });
 
-  async function createAndLink(res, upAccountIds, startDate, offBudgetIds) {
+  async function createAndLink(res, upAccountIds, startDate, offBudgetIds, linkedExisting = 0) {
     let created;
     try {
       created = await createAccounts({
@@ -336,37 +407,53 @@ function createApp({
     store.set('linkedAccounts', linked);
     store.set('importFrom', importFrom);
     await config.save(store);
-    res.render('created', { created, startDate });
+    res.render('created', { created, startDate, linkedExisting });
   }
 
-  app.post('/accounts/create', async (req, res) => {
+  /** Link (or unlink, with '') Up accounts to existing Actual accounts. */
+  function applyLinks(changes) {
+    const linked = config.getLinkedAccounts(store);
+    const importFrom = config.getImportFrom(store);
+    let changed = 0;
+    for (const [upId, actualId] of changes) {
+      if ((linked[upId] || '') === actualId) continue;
+      // A start date only applies to the account this tool created.
+      delete importFrom[upId];
+      if (actualId) linked[upId] = actualId;
+      else delete linked[upId];
+      changed++;
+    }
+    store.set('linkedAccounts', linked);
+    store.set('importFrom', importFrom);
+    return changed;
+  }
+
+  // Add Up accounts: create new Actual accounts and/or link existing ones.
+  app.post('/accounts/add', async (req, res) => {
     const body = req.body || {};
-    const upAccountIds = [].concat(body.upAccountIds || []);
-    const offBudgetIds = [].concat(body.offBudgetIds || []).filter((id) => upAccountIds.includes(id));
-    await createAndLink(res, upAccountIds, (body.startDate || '').trim(), offBudgetIds);
+    const choices = Object.entries(body)
+      .filter(([key, value]) => key.startsWith('choice:') && typeof value === 'string' && value)
+      .map(([key, value]) => [key.slice('choice:'.length), value]);
+    const create = choices.filter(([, v]) => v === CREATE || v === CREATE_OFF_BUDGET);
+    const existing = choices.filter(([, v]) => v !== CREATE && v !== CREATE_OFF_BUDGET);
+    if (!choices.length) return res.redirect('/link');
+    const linkedExisting = applyLinks(existing);
+    await config.save(store);
+    if (!create.length) return res.redirect(`/link?saved=${linkedExisting}`);
+    const offBudgetIds = create.filter(([, v]) => v === CREATE_OFF_BUDGET).map(([id]) => id);
+    return createAndLink(res, create.map(([id]) => id), (body.startDate || '').trim(), offBudgetIds, linkedExisting);
   });
 
+  // Change existing links: one account (account/accID) or the whole list (link:<upId> fields).
   app.post('/link', async (req, res) => {
-    const linked = config.getLinkedAccounts(store);
-    const upId = req.body?.account;
-    const actualId = req.body?.accID;
-    if (!upId) return res.status(400).send('Missing account');
-    if (actualId === CREATE_NEW || actualId === CREATE_NEW_OFF_BUDGET) {
-      const upAccount = await upClient.getAccount(config.getUpToken(store), upId);
-      const offBudgetIds = actualId === CREATE_NEW_OFF_BUDGET ? [upId] : [];
-      return createAndLink(res, [upId], initialise.startDateFor(upAccount), offBudgetIds);
-    }
-    if (linked[upId] !== actualId) {
-      // A start date only applies to the account this tool created.
-      const importFrom = config.getImportFrom(store);
-      delete importFrom[upId];
-      store.set('importFrom', importFrom);
-    }
-    if (actualId) linked[upId] = actualId;
-    else delete linked[upId];
-    store.set('linkedAccounts', linked);
+    const body = req.body || {};
+    const changes = body.account !== undefined
+      ? [[body.account, body.accID || '']]
+      : Object.entries(body).filter(([key]) => key.startsWith('link:')).map(([key, value]) => [key.slice('link:'.length), String(value || '')]);
+    if (!changes.length || changes.some(([upId]) => !upId)) return res.status(400).send('Missing account');
+    const changed = applyLinks(changes);
     await config.save(store);
-    res.redirect('/link?saved=1');
+    res.redirect(`/link?saved=${changed}`);
   });
 
   app.post('/sync', async (req, res) => {
@@ -395,4 +482,4 @@ function createApp({
   return app;
 }
 
-module.exports = { createApp, basicAuth, sameOrigin, staleLinks };
+module.exports = { createApp, basicAuth, sameOrigin, staleLinks, syncLabel, suggestedChoice };

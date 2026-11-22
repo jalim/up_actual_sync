@@ -1,13 +1,15 @@
 extends layout
 
 block content
-  h1.h3 Link existing transfers
+  .page-heading
+    div
+      h1 Link existing transfers
   if done
     .alert.alert-success
       | Linked #{result.linked} transfer#{result.linked === 1 ? '' : 's'}.
       if result.skipped
         |  #{result.skipped} skipped.
-    a.btn.btn-primary(href='/link') Back to linking
+    a.btn.btn-primary(href='/link') Back to accounts
   else
     p
       | Transfers between your linked Up accounts that were imported as two ordinary transactions

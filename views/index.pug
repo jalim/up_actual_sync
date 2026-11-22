@@ -1,20 +1,116 @@
 extends layout
 
+mixin activityRow(r)
+  .activity-row
+    span.row-state(class=r.errors && r.errors.length ? 'is-warning' : 'is-ok' aria-hidden='true')
+    div
+      strong= r.name
+      p #{r.added} added · #{r.updated} updated#{r.transfers ? ' · ' + r.transfers + ' transfers' : ''}
+      if r.errors && r.errors.length
+        p.text-danger= r.errors.join('; ')
+    span.pill(class=r.errors && r.errors.length ? 'pill-warning' : '')= r.errors && r.errors.length ? 'Review' : 'Synced'
+
 block content
-  p.lead Sync transactions from Up Bank into Actual Budget.
-  p #{linkedCount} linked account#{linkedCount === 1 ? '' : 's'}.
-  button#sync.btn.btn-primary(type='button') Sync now
-  a.btn.btn-outline-primary.ms-2(href='/ofx') Import P&N OFX
-  #status.mt-3(role='status' aria-live='polite')
-    if lastSync
-      if lastSync.ok
-        .alert.alert-success
-          | Last sync #{lastSync.at}:
-          ul.mb-0
-            each r in lastSync.results
-              li #{r.name}: #{r.added} added, #{r.updated} updated#{r.transfers ? ', ' + r.transfers + ' transfers' : ''}#{r.errors.length ? ' (' + r.errors.join('; ') + ')' : ''}
+  .page-heading
+    div
+      h1 Overview
+      p Up Bank transactions, synced into your Actual budget.
+
+  if steps
+    section.panel.onboarding(data-reload-after-sync)
+      h2 Get started
+      ol.steps
+        each step, i in steps
+          li(class=step.done ? 'is-done' : '')
+            span.step-marker
+              if step.done
+                +icon('check')
+              else
+                = i + 1
+            if step.href && !step.done && steps.slice(0, i).every((prev) => prev.done)
+              a(href=step.href)= step.label
+            else
+              span= step.label
+      +syncButton(!configured || !linkedCount)
+      #status.mt-3(role='status' aria-live='polite' aria-busy='false')
+  else
+    section.sync-bar
+      span.state-dot#sync-state(class='is-' + syncState aria-hidden='true')
+      div
+        strong#last-sync-label= syncLabel
+        p
+          span#last-sync-time
+            time(datetime=lastSync.at)= lastSync.at
+          if lastSync.trigger
+            |  · #{lastSync.trigger === 'schedule' ? 'scheduled' : 'manual'}
+      +syncButton(false)
+
+  .stats-grid(hidden=!!steps)
+    .stat-card
+      span.stat-label Linked accounts
+      strong= linkedCount
+      if staleCount
+        a.stat-alert(href='/link') #{staleCount} no longer in Up. Review →
       else
-        .alert.alert-danger Last sync #{lastSync.at} failed: #{lastSync.error}
+        a(href='/link') Manage accounts →
+    .stat-card
+      span.stat-label Last sync
+      strong#stat-added= added
+      span.stat-detail#stat-detail transactions added · #{updated} updated
+    .stat-card
+      span.stat-label Automatic sync
+      strong.stat-word= cronEnabled ? (scheduleText || 'On') : 'Off'
+      span.stat-detail
+        if !cronEnabled
+          | Turn on with the cronEnabled setting
+        else if nextRun
+          | Next: #[time(datetime=nextRun) #{nextRun}]
+        else
+          | Schedule: #{cronSchedule}
+
+  .dashboard-grid
+    section.panel
+      .panel-heading
+        h2 Sync activity
+        if lastSync && lastSync.trigger
+          span.pill#activity-trigger= lastSync.trigger === 'schedule' ? 'Scheduled sync' : 'Manual sync'
+      if !steps
+        #status(role='status' aria-live='polite' aria-busy='false')
+          if lastSync.ok
+            if lastSync.results.length
+              .activity-list
+                each r in lastSync.results
+                  +activityRow(r)
+            else
+              .empty-state No linked accounts were included in the last sync.
+          else
+            .alert.alert-danger= lastSync.error
+      else
+        .empty-state
+          p Results from each sync show up here, account by account.
+    section.panel.quick-actions
+      h2 More tools
+      a.action-card(href='/ofx')
+        span.action-icon
+          +icon('import')
+        div
+          h3 Import a statement
+          p Add P&N bank history from OFX files.
+        span(aria-hidden='true') →
+      a.action-card(href='/link')
+        span.action-icon
+          +icon('link')
+        div
+          h3 Manage accounts
+          p Link accounts and tidy up transfers.
+        span(aria-hidden='true') →
+      a.action-card(href='/setup')
+        span.action-icon
+          +icon('settings')
+        div
+          h3 Connection settings
+          p Up token and Actual server details.
+        span(aria-hidden='true') →
 
 block scripts
   script(src='/client.js')

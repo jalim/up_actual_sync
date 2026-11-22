@@ -1,18 +1,50 @@
+mixin icon(name)
+  svg.icon(viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true')
+    if name === 'overview'
+      rect(x='3' y='3' width='7' height='7' rx='2')
+      rect(x='14' y='3' width='7' height='7' rx='2')
+      rect(x='3' y='14' width='7' height='7' rx='2')
+      rect(x='14' y='14' width='7' height='7' rx='2')
+    else if name === 'link'
+      path(d='M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2')
+    else if name === 'import'
+      path(d='M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5')
+    else if name === 'sync'
+      path(d='M20 7a9 9 0 0 0-15-2L3 7m0-5v5h5M4 17a9 9 0 0 0 15 2l2-2m0 5v-5h-5')
+    else if name === 'check'
+      path(d='m5 12 5 5 9-10')
+    else
+      circle(cx='12' cy='12' r='4')
+      path(d='M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2')
+
+mixin syncButton(disabled)
+  button#sync.btn.btn-primary(type='button' disabled=disabled)
+    +icon('sync')
+    span Sync now
+
 doctype html
 html(lang='en')
   head
     meta(charset='utf-8')
     meta(name='viewport' content='width=device-width, initial-scale=1')
+    meta(name='color-scheme' content='light dark')
+    meta(name='theme-color' content='#f6f5fa' media='(prefers-color-scheme: light)')
+    meta(name='theme-color' content='#17151f' media='(prefers-color-scheme: dark)')
     title #{title ? title + ' · ' : ''}Up Actual Sync
-    link(rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' integrity='sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH' crossorigin='anonymous')
+    link(rel='stylesheet' href='/styles.css')
   body
-    nav.navbar.navbar-expand.bg-body-tertiary.mb-4
-      .container
-        a.navbar-brand(href='/') Up Actual Sync
-        .navbar-nav
-          a.nav-link(href='/setup') Setup
-          a.nav-link(href='/link') Link accounts
-          a.nav-link(href='/ofx') Import OFX
-    main.container
+    a.skip-link(href='#main') Skip to content
+    aside.sidebar
+      a.brand(href='/')
+        span.brand-mark
+          +icon('sync')
+        span.brand-name Up Actual Sync
+      nav(aria-label='Main navigation')
+        each item in [{path:'/', label:'Overview', icon:'overview'}, {path:'/link', label:'Accounts', icon:'link'}, {path:'/ofx', label:'Statements', icon:'import'}, {path:'/setup', label:'Settings', icon:'settings'}]
+          a.nav-item(href=item.path class=activePath === item.path ? 'active' : '' aria-current=activePath === item.path ? 'page' : undefined)
+            +icon(item.icon)
+            span= item.label
+      p.sidebar-note Syncs Up Bank transactions into Actual Budget. Not affiliated with Up or Actual.
+    main#main.container
       block content
     block scripts

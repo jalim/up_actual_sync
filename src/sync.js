@@ -77,7 +77,7 @@ async function run({
       } catch (err) {
         // A deleted Up account (e.g. a closed saver) must not block the rest.
         if (err instanceof UpApiError && err.status === 404) {
-          console.warn(`Up account ${upAccountId} no longer exists; skipping. Unlink it on the Link accounts page.`);
+          console.warn(`Up account ${upAccountId} no longer exists; skipping. Unlink it on the Accounts page.`);
           fetched.push({ upAccountId, actualAccountId, txns: [], goneFromUp: true });
           continue;
         }
@@ -115,7 +115,8 @@ async function run({
             updated: 0,
             transfers: 0,
             deferred: 0,
-            errors: ['Up account no longer exists; unlink it on the Link accounts page'],
+            goneFromUp: true,
+            errors: ['Up account no longer exists; unlink it on the Accounts page'],
           };
         }
         if (!account) {
